@@ -1,11 +1,4 @@
-// export default function ConnectToolsPage() {
-//   return (
-//     <div style={{ padding: 40, color: "white" }}>
-//       <h1>Connect Tools ✅</h1>
-//       <p>If you can see this, /onboarding/connect-tools works.</p>
-//     </div>
-//   );
-// }
+
 "use client";
 
 import { useMemo, useState } from "react";
