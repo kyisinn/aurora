@@ -110,8 +110,10 @@ function StatCard({ value, label, sub }: { value: string; label: string; sub?: s
 
 function Timeline({
   blocks,
+  height = 520,
 }: {
   blocks: { title: string; start: string; end: string; type: string; priority?: string }[];
+  height?: number;
 }) {
   const min = Math.min(...blocks.map((b) => parseTime(b.start)));
   const max = Math.max(...blocks.map((b) => parseTime(b.end)));
@@ -125,7 +127,10 @@ function Timeline({
   };
 
   return (
-    <div className="relative h-[520px] rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-white/10 overflow-hidden">
+    <div
+      className="relative rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-white/10 overflow-hidden"
+      style={{ height }}
+    >
       <div className="absolute inset-0 opacity-15">
         {Array.from({ length: 12 }).map((_, i) => (
           <div
@@ -222,6 +227,7 @@ export default function DashboardPreviewPage() {
   const router = useRouter();
   const [setup, setSetup] = useState<SetupPayload | null>(null);
   const [schedule, setSchedule] = useState<ScheduleRecord | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -250,6 +256,15 @@ export default function DashboardPreviewPage() {
       active = false;
     };
   }, []);
+
+  useEffect(() => {
+    if (!isFullscreen) return;
+    const previous = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previous;
+    };
+  }, [isFullscreen]);
 
   const generatedBlocks = useMemo(() => {
     const raw = schedule?.blocks;
@@ -408,9 +423,19 @@ export default function DashboardPreviewPage() {
                 <div className="text-sm text-white/60">Timeline</div>
                 <div className="text-lg font-bold">Live preview</div>
               </div>
-              <div className="text-xs text-white/50">Today • Auto-generated</div>
+              <div className="flex items-center gap-3 text-xs text-white/50">
+                <span>Today • Auto-generated</span>
+                <button
+                  onClick={() => setIsFullscreen(true)}
+                  className="rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-xs text-white/70 transition"
+                >
+                  Fullscreen
+                </button>
+              </div>
             </div>
-            <Timeline blocks={blocks} />
+            <div className="max-h-[520px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+              <Timeline blocks={blocks} height={920} />
+            </div>
           </div>
 
           {/* Task list */}
@@ -470,6 +495,31 @@ export default function DashboardPreviewPage() {
           </div>
         </div>
       </main>
+
+      {isFullscreen && (
+        <div className="fixed inset-0 z-[60] bg-black/80 backdrop-blur-sm">
+          <div className="absolute inset-4 md:inset-8 lg:inset-12 rounded-3xl border border-white/10 bg-gradient-to-br from-slate-900 to-slate-800 p-6 shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <div>
+                <div className="text-sm text-white/60">Timeline</div>
+                <div className="text-lg font-bold">Live preview</div>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="text-xs text-white/50">Today • Auto-generated</div>
+                <button
+                  onClick={() => setIsFullscreen(false)}
+                  className="rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-xs text-white/70 transition"
+                >
+                  Exit fullscreen
+                </button>
+              </div>
+            </div>
+            <div className="max-h-[calc(100vh-180px)] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
+              <Timeline blocks={blocks} height={1400} />
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

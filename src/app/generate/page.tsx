@@ -81,14 +81,14 @@ Rules:
   }, [tasks, userPrompt]);
 
   async function handleGenerate() {
-    if (!tasks.length) {
-      alert("Add at least one task before generating a schedule.");
+    if (!userPrompt.trim()) {
+      alert("Please add instructions before generating a schedule.");
       return;
     }
 
     setLoading(true);
     try {
-      // 1. Send raw data to our new AI route
+      // Send data to AI route (tasks optional, instructions required)
       const res = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -103,7 +103,7 @@ Rules:
         throw new Error(err.error || "AI generation failed");
       }
 
-      // 2. Success! The backend has already saved the schedule.
+      // Success! The backend has already saved the schedule.
       router.push("/dashboard-preview");
     } catch (err) {
       console.error("Failed to generate schedule", err);
@@ -128,7 +128,7 @@ Rules:
         </Button>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-2">
+      <div className="grid gap-4 lg:grid-cols-3">
         {/* User prompt */}
         <Card>
           <div className="space-y-3">
@@ -140,7 +140,7 @@ Rules:
               placeholder="e.g. I have an exam tomorrow, focus more in the morning. Also, I need a long lunch break."
               className="w-full rounded-3xl border border-white/10 bg-black/20 px-4 py-3 text-sm outline-none focus:border-violet-500"
             />
-            <Button onClick={handleGenerate} disabled={loading || tasks.length === 0}>
+            <Button onClick={handleGenerate} disabled={loading || !userPrompt.trim()}>
               {loading ? "Generating with AI…" : "Generate schedule →"}
             </Button>
           </div>
@@ -158,6 +158,42 @@ Rules:
             />
             <div className="text-xs text-white/40">
               Tasks loaded: <strong>{tasks.length}</strong>
+            </div>
+          </div>
+        </Card>
+
+        {/* Visual task list preview */}
+        <Card>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold">Task list</div>
+              <div className="text-xs text-white/40">{tasks.length} items</div>
+            </div>
+            <div className="space-y-2">
+              {tasks.length ? (
+                tasks.map((task) => (
+                  <div
+                    key={task.id}
+                    className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="text-xs font-semibold">{task.title}</div>
+                      <div className="text-[10px] uppercase tracking-wide text-white/60">
+                        {task.priority}
+                      </div>
+                    </div>
+                    <div className="mt-1 flex items-center gap-2 text-[11px] text-white/50">
+                      <span>{task.minutes} min</span>
+                      <span>•</span>
+                      <span>{task.due ? `Due ${task.due}` : "No due date"}</span>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="rounded-2xl border border-dashed border-white/10 bg-black/10 px-3 py-6 text-center text-xs text-white/50">
+                  No tasks yet. Add tasks to preview them here.
+                </div>
+              )}
             </div>
           </div>
         </Card>
