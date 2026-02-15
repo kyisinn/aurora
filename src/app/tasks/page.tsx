@@ -54,13 +54,48 @@ export default function TasksPage() {
     try {
       setIsLoading(true);
       setLoadError(null);
+
+      const profileRes = await fetch("/api/profile");
+      if (profileRes.status === 401) {
+        router.push("/login");
+        return;
+      }
+      if (!profileRes.ok) {
+        throw new Error(`Failed to load profile (${profileRes.status})`);
+      }
+
+      const profile = await profileRes.json();
+      if (!profile) {
+        router.push("/get-started");
+        return;
+      }
+
       const response = await fetch("/api/tasks");
-      if (!response.ok) throw new Error("Failed to fetch tasks");
+      if (response.status === 401) {
+        console.log("Unauthorized - redirecting to login");
+        router.push("/login");
+        return;
+      }
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || `Failed to fetch tasks (${response.status})`);
+      }
+
       const data = await response.json();
-      setTasks(data);
+      if (!Array.isArray(data)) {
+        console.warn("API returned non-array data:", data);
+        setTasks([]);
+      } else {
+        // Ensure all tasks have unique string IDs
+        setTasks(data.map(t => ({
+          ...t,
+          id: String(t.id) // Force ID to be a string
+        })));
+      }
     } catch (error) {
-      console.error("Database error:", error);
-      setLoadError("Failed to load tasks. Please try again.");
+      console.error("Load tasks error:", error);
+      setLoadError(error instanceof Error ? error.message : "Failed to load tasks. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -68,7 +103,7 @@ export default function TasksPage() {
 
   useEffect(() => {
     void loadTasks();
-  }, []);
+  }, [router]);
 
   const stats = useMemo(() => {
     const totalMin = tasks.reduce((s, t) => s + (Number(t.minutes) || 0), 0);
@@ -155,7 +190,17 @@ export default function TasksPage() {
         method: "DELETE",
       });
       if (!response.ok) throw new Error("Failed to delete task");
-      setTasks((prev) => prev.filter((t) => t.id !== id));
+
+      // Keep all tasks EXCEPT the one being deleted
+      setTasks((prev) => {
+        const filtered = prev.filter((t) => {
+          console.log(`Comparing: t.id=${t.id} (${typeof t.id}) vs id=${id} (${typeof id})`);
+          return String(t.id) !== String(id);
+        });
+        console.log(`Before: ${prev.length} tasks, After: ${filtered.length} tasks`);
+        return filtered;
+      });
+
       if (editingId === id) resetForm();
       setActionError(null);
     } catch (error) {
@@ -181,6 +226,7 @@ export default function TasksPage() {
         });
         if (!response.ok) throw new Error("Failed to create example task");
         const newTask = await response.json();
+        // Only add the response from DB, not local state object
         setTasks((prev) => [newTask, ...prev]);
       }
       setActionError(null);
@@ -339,9 +385,11 @@ export default function TasksPage() {
             <div className="flex items-center justify-between">
               <div>
                 <div className="text-sm font-semibold">Your task list</div>
-                <div className="text-xs text-white/60">Click a task to edit</div>
               </div>
-              <Button variant="ghost" onClick={() => router.push("/generate")}>
+              <Button
+                onClick={() => router.push("/generate")}
+                className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 shadow-lg shadow-blue-500/25"
+              >
                 Use tasks → Generate
               </Button>
             </div>

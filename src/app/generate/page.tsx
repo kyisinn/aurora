@@ -9,19 +9,36 @@ import { Button } from "@/component/button";
 
 type Priority = "low" | "medium" | "high";
 
+type TimePreference = "morning" | "afternoon" | "evening";
+
 type Task = {
-  id: string;
+  id?: string;
   title: string;
   minutes: number;
-  due: string;
+  due?: string;
   priority: Priority;
 };
+
+type SetupPayload = {
+  preference: TimePreference;
+  intensity: "light" | "balanced" | "intense";
+  focusHours: number;
+  tasks: Array<{ title: string; minutes: number; priority: Priority }>;
+  preview?: Array<{ title: string; start: string; end: string; type: string; priority?: string }>;
+};
+
+type ProfileResponse = {
+  preferences?: { timePreference?: TimePreference } | null;
+};
+
+
 
 /* ================= PAGE ================= */
 
 export default function GeneratePage() {
   const router = useRouter();
 
+  const [timePreference, setTimePreference] = useState<TimePreference | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [userPrompt, setUserPrompt] = useState("");
   const [loading, setLoading] = useState(false);
@@ -30,46 +47,106 @@ export default function GeneratePage() {
   useEffect(() => {
     let active = true;
 
-    async function load() {
+    const getSetup = () => {
       try {
-        const [tasksRes, scheduleRes] = await Promise.all([
+        const raw = localStorage.getItem("aurora_setup");
+        return raw ? (JSON.parse(raw) as SetupPayload) : null;
+      } catch {
+        return null;
+      }
+    };
+
+    const mapSetupTasks = (setup: SetupPayload | null) =>
+      setup?.tasks?.map((t, idx) => ({
+        id: `setup-${idx}`,
+        title: t.title,
+        minutes: t.minutes,
+        priority: t.priority,
+      })) ?? [];
+
+    const load = async () => {
+      const setup = getSetup();
+      const setupTasks = mapSetupTasks(setup);
+
+      if (setup?.preference && active) {
+        setTimePreference(setup.preference);
+      }
+
+      try {
+        const [tasksRes, scheduleRes, profileRes] = await Promise.all([
           fetch("/api/tasks"),
           fetch("/api/schedule"),
+          fetch("/api/profile"),
         ]);
 
         if (tasksRes.ok) {
           const data: Task[] = await tasksRes.json();
-          if (active) setTasks(data);
+          if (active) {
+            if (Array.isArray(data) && data.length > 0) setTasks(data);
+            else if (setupTasks.length > 0) setTasks(setupTasks);
+            else setTasks([]);
+          }
         } else if (active) {
-          setTasks([]);
+          if (setupTasks.length > 0) setTasks(setupTasks);
+          else setTasks([]);
         }
 
         if (scheduleRes.ok) {
           const schedule = await scheduleRes.json();
-          // Pre-fill the prompt if they have one saved
           if (schedule?.userPrompt && active) {
             setUserPrompt(String(schedule.userPrompt));
           }
         }
-      } catch {
-        if (active) setTasks([]);
-      }
-    }
 
-    load();
+        if (profileRes.ok) {
+          const profile = (await profileRes.json()) as ProfileResponse | null;
+          const pref = profile?.preferences?.timePreference;
+          if (active && !setup?.preference && pref) {
+            setTimePreference(pref);
+          }
+        }
+      } catch {
+        if (active) {
+          if (setupTasks.length > 0) setTasks(setupTasks);
+          else setTasks([]);
+        }
+      }
+    };
+
+    void load();
+
+    const handleFocus = () => {
+      void load();
+    };
+
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") void load();
+    };
+
+    window.addEventListener("focus", handleFocus);
+    document.addEventListener("visibilitychange", handleVisibility);
+
     return () => {
       active = false;
+      window.removeEventListener("focus", handleFocus);
+      document.removeEventListener("visibilitychange", handleVisibility);
     };
   }, []);
 
   /* AI-style summary prompt (preview only) */
   const autoPrompt = useMemo(() => {
     const lines = tasks.map(
-      (t) => `• ${t.title} (${t.minutes} min, ${t.priority}, due ${t.due})`
+      (t) => `• ${t.title} (${t.minutes} min, ${t.priority}${t.due ? `, due ${t.due}` : ""})`
     );
+
+    const preferenceLine = timePreference
+      ? `Preferred focus window: ${timePreference}`
+      : "Preferred focus window: (not set)";
 
     return `User request:
 ${userPrompt || "(none)"}
+
+${preferenceLine}
 
 Tasks:
 ${lines.length ? lines.join("\n") : "No tasks added"}
@@ -78,11 +155,11 @@ Rules:
 - Prioritize urgent tasks
 - Insert breaks
 - Keep schedule realistic`;
-  }, [tasks, userPrompt]);
+  }, [tasks, userPrompt, timePreference]);
 
   async function handleGenerate() {
-    if (!userPrompt.trim()) {
-      alert("Please add instructions before generating a schedule.");
+    if (!userPrompt.trim() && tasks.length === 0) {
+      alert("Please add instructions or tasks before generating a schedule.");
       return;
     }
 
@@ -95,6 +172,7 @@ Rules:
         body: JSON.stringify({
           tasks,
           userPrompt,
+          preferences: timePreference ? { timePreference } : undefined,
         }),
       });
 
@@ -140,7 +218,7 @@ Rules:
               placeholder="e.g. I have an exam tomorrow, focus more in the morning. Also, I need a long lunch break."
               className="w-full rounded-3xl border border-white/10 bg-black/20 px-4 py-3 text-sm outline-none focus:border-violet-500"
             />
-            <Button onClick={handleGenerate} disabled={loading || !userPrompt.trim()}>
+            <Button onClick={handleGenerate} disabled={loading || (!userPrompt.trim() && tasks.length === 0)}>
               {loading ? "Generating with AI…" : "Generate schedule →"}
             </Button>
           </div>

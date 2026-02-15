@@ -2,12 +2,17 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ensureUser } from "@/lib/session";
 
-export async function PUT(
-  req: Request,
-  { params }: { params: { id: string } }
-) {
+// Define the context type for Next.js 15+
+type RouteContext = {
+  params: Promise<{ id: string }>;
+};
+
+export async function PUT(req: Request, context: RouteContext) {
   try {
     const { userId } = await ensureUser();
+    // 1. AWAIT the params here
+    const { id } = await context.params; 
+    
     const body = await req.json();
 
     const data: Record<string, unknown> = {};
@@ -19,7 +24,7 @@ export async function PUT(
     if (body.completed !== undefined) data.completed = Boolean(body.completed);
 
     const updated = await prisma.task.updateMany({
-      where: { id: params.id, userId },
+      where: { id, userId }, // Use the awaited id
       data,
     });
 
@@ -28,7 +33,7 @@ export async function PUT(
     }
 
     const task = await prisma.task.findFirst({
-      where: { id: params.id, userId },
+      where: { id, userId },
     });
 
     return NextResponse.json(task);
@@ -39,15 +44,14 @@ export async function PUT(
   }
 }
 
-export async function DELETE(
-  _req: Request,
-  { params }: { params: { id: string } }
-) {
+export async function DELETE(req: Request, context: RouteContext) {
   try {
     const { userId } = await ensureUser();
+    // 1. AWAIT the params here
+    const { id } = await context.params;
 
     const removed = await prisma.task.deleteMany({
-      where: { id: params.id, userId },
+      where: { id, userId }, // Use the awaited id
     });
 
     if (removed.count === 0) {

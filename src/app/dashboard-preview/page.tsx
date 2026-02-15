@@ -115,66 +115,31 @@ function Timeline({
   blocks: { title: string; start: string; end: string; type: string; priority?: string }[];
   height?: number;
 }) {
-  const min = Math.min(...blocks.map((b) => parseTime(b.start)));
-  const max = Math.max(...blocks.map((b) => parseTime(b.end)));
-  const total = Math.max(1, max - min);
+  const sorted = [...blocks].sort((a, b) => a.start.localeCompare(b.start));
 
   const styleByType: Record<string, string> = {
     focus: "bg-gradient-to-br from-blue-500/85 to-indigo-600/85 border-blue-400/30",
-    break: "bg-gradient-to-br from-emerald-500/85 to-teal-600/85 border-emerald-400/30",
+    break: "bg-gradient-to-br from-zinc-800 to-zinc-950 border-white/10 text-white/50",
     personal: "bg-gradient-to-br from-amber-500/85 to-orange-600/85 border-amber-400/30",
     class: "bg-gradient-to-br from-purple-500/85 to-pink-600/85 border-purple-400/30",
   };
 
   return (
-    <div
-      className="relative rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-white/10 overflow-hidden"
-      style={{ height }}
-    >
-      <div className="absolute inset-0 opacity-15">
-        {Array.from({ length: 12 }).map((_, i) => (
-          <div
-            key={i}
-            className="absolute w-full border-t border-white/10"
-            style={{ top: `${(i / 12) * 100}%` }}
-          />
-        ))}
-      </div>
-
-      {/* labels */}
-      <div className="absolute left-0 top-0 bottom-0 w-16 bg-gradient-to-r from-slate-900/90 to-transparent border-r border-white/5 flex flex-col justify-between py-4 px-2">
-        {Array.from({ length: 9 }).map((_, i) => {
-          const t = min + (i * total) / 8;
-          const h = Math.floor(t / 60);
-          const hh = h > 12 ? h - 12 : h;
-          const suf = h >= 12 ? "pm" : "am";
-          return (
-            <div key={i} className="text-[10px] text-white/40 font-mono text-right">
-              {hh}{suf}
+    <div className="rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-white/10">
+      <div className="px-4 py-4 space-y-3" style={{ minHeight: height }}>
+        {sorted.map((b, idx) => (
+          <div key={`${b.title}-${idx}`} className="flex items-start gap-3">
+            <div className="w-16 shrink-0 text-[11px] text-white/50 font-mono leading-4">
+              <div>{b.start}</div>
+              <div>{b.end}</div>
             </div>
-          );
-        })}
-      </div>
 
-      {/* blocks */}
-      <div className="absolute left-16 right-4 top-0 bottom-0 py-4">
-        {blocks.map((b, idx) => {
-          const s = parseTime(b.start);
-          const e = parseTime(b.end);
-          const top = ((s - min) / total) * 100;
-          const height = ((e - s) / total) * 100;
-
-          return (
-            <div
-              key={idx}
-              className={`absolute left-0 right-0 rounded-xl border p-3 backdrop-blur-sm shadow-lg ${styleByType[b.type] || styleByType.focus}`}
-              style={{ top: `${top}%`, height: `${Math.max(height, 6)}%` }}
-            >
+            <div className={`flex-1 rounded-xl border p-3 shadow-lg ${styleByType[b.type] || styleByType.focus}`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="text-sm font-semibold text-white truncate">{b.title}</div>
                   <div className="text-[11px] text-white/70 mt-1">
-                    {b.start} – {b.end}
+                    {b.start} - {b.end}
                   </div>
                 </div>
 
@@ -193,8 +158,8 @@ function Timeline({
                 )}
               </div>
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -223,10 +188,34 @@ function mapTagToType(tag?: string) {
   return "focus";
 }
 
+function normalizeTasks(data: unknown): TaskInput[] {
+  const raw = Array.isArray(data)
+    ? data
+    : Array.isArray((data as { tasks?: unknown }).tasks)
+    ? (data as { tasks?: unknown }).tasks
+    : [];
+
+  return raw
+    .map((item) => {
+      if (!item || typeof item !== "object") return null;
+      const t = item as { title?: unknown; minutes?: unknown; priority?: unknown };
+      const title = typeof t.title === "string" ? t.title : null;
+      const minutes = typeof t.minutes === "number" ? t.minutes : Number(t.minutes);
+      const priority =
+        t.priority === "high" || t.priority === "medium" || t.priority === "low"
+          ? t.priority
+          : "medium";
+      if (!title || !Number.isFinite(minutes)) return null;
+      return { title, minutes, priority };
+    })
+    .filter((t): t is TaskInput => Boolean(t));
+}
+
 export default function DashboardPreviewPage() {
   const router = useRouter();
   const [setup, setSetup] = useState<SetupPayload | null>(null);
   const [schedule, setSchedule] = useState<ScheduleRecord | null>(null);
+  const [apiTasks, setApiTasks] = useState<TaskInput[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
@@ -238,6 +227,16 @@ export default function DashboardPreviewPage() {
         if (res.ok) {
           const data = await res.json();
           if (active && data?.blocks) setSchedule(data);
+        }
+      } catch {
+        // ignore
+      }
+
+      try {
+        const res = await fetch("/api/tasks");
+        if (res.ok) {
+          const data = await res.json();
+          if (active) setApiTasks(normalizeTasks(data));
         }
       } catch {
         // ignore
@@ -300,8 +299,12 @@ export default function DashboardPreviewPage() {
   }, [blocks]);
 
   const hasGenerated = generatedBlocks.length > 0;
-  const taskCount = setup ? setup.tasks.length : generatedBlocks.filter((b) => b.type === "focus").length;
-  const highCount = setup ? setup.tasks.filter((t) => t.priority === "high").length : 0;
+  const setupTasks = setup?.tasks ?? [];
+  const tasks = setupTasks.length ? setupTasks : apiTasks;
+  const taskCount = tasks.length
+    ? tasks.length
+    : generatedBlocks.filter((b) => b.type === "focus").length;
+  const highCount = tasks.filter((t) => t.priority === "high").length;
 
   if (!setup && generatedBlocks.length === 0) {
     return (
@@ -329,15 +332,17 @@ export default function DashboardPreviewPage() {
       {/* Top bar */}
       <header className="sticky top-0 z-50 backdrop-blur-xl bg-black/50 border-b border-white/10">
         <div className="max-w-7xl mx-auto px-6 h-16 flex items-center justify-between">
-          <button onClick={() => router.push("/dashboard")} className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/25">
+          <button
+            onClick={() => router.push("/dashboard")}
+            className="group flex items-center gap-3 rounded-xl px-2 py-1 transition-colors hover:bg-white hover:text-black"
+          >
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center shadow-lg shadow-blue-500/25 transition-transform group-hover:scale-105">
               <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
               </svg>
             </div>
             <div>
-              <div className="font-bold text-sm">Aurora</div>
-              <div className="text-[10px] text-white/50">Dashboard Preview</div>
+              <div className="font-bold text-sm group-hover:text-black"> Back to Dashboard</div>
             </div>
           </button>
 
@@ -375,6 +380,7 @@ export default function DashboardPreviewPage() {
                 <>
                   <Badge text="Source: Generated" />
                   <Badge text={`Blocks: ${generatedBlocks.length}`} />
+                  {tasks.length > 0 && <Badge text={`Tasks: ${tasks.length}`} />}
                 </>
               )}
             </div>
@@ -442,8 +448,8 @@ export default function DashboardPreviewPage() {
           <div className="rounded-3xl border border-white/10 bg-gradient-to-br from-white/[0.06] to-white/[0.02] p-6">
             <div className="flex items-center justify-between mb-4">
               <div>
-                <div className="text-sm text-white/60">Tasks</div>
-                <div className="text-lg font-bold">Your inputs</div>
+                
+                <div className="text-lg font-bold">Your Inputs</div>
               </div>
               <button
                 onClick={() => router.push(hasGenerated ? "/generate" : "/get-started")}
@@ -454,38 +460,33 @@ export default function DashboardPreviewPage() {
             </div>
 
             <div className="space-y-3 max-h-[520px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-              {setup ? (
-                <>
-                  {setup.tasks.map((t, idx) => (
-                    <div
-                      key={`${t.title}-${idx}`}
-                      className="rounded-2xl border border-white/10 bg-white/5 p-4 hover:border-white/20 hover:bg-white/10 transition"
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-sm font-semibold text-white truncate">{t.title}</div>
-                          <div className="text-xs text-white/55 mt-1">{t.minutes} min</div>
-                        </div>
-                        <span
-                          className={`text-[10px] px-2 py-1 rounded-lg border whitespace-nowrap ${
-                            t.priority === "high"
-                              ? "bg-red-500/20 border-red-500/40 text-red-200"
-                              : t.priority === "medium"
-                              ? "bg-yellow-500/20 border-yellow-500/40 text-yellow-200"
-                              : "bg-green-500/20 border-green-500/40 text-green-200"
-                          }`}
-                        >
-                          {t.priority}
-                        </span>
+              {tasks.length ? (
+                tasks.map((t, idx) => (
+                  <div
+                    key={`${t.title}-${idx}`}
+                    className="rounded-2xl border border-white/10 bg-white/5 p-4 hover:border-white/20 hover:bg-white/10 transition"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-white truncate">{t.title}</div>
+                        <div className="text-xs text-white/55 mt-1">{t.minutes} min</div>
                       </div>
+                      <span
+                        className={`text-[10px] px-2 py-1 rounded-lg border whitespace-nowrap ${
+                          t.priority === "high"
+                            ? "bg-red-500/20 border-red-500/40 text-red-200"
+                            : t.priority === "medium"
+                            ? "bg-yellow-500/20 border-yellow-500/40 text-yellow-200"
+                            : "bg-green-500/20 border-green-500/40 text-green-200"
+                        }`}
+                        >
+                        {t.priority}
+                      </span>
                     </div>
-                  ))}
-                  {setup.tasks.length === 0 && (
-                    <div className="text-sm text-white/60">No tasks added yet.</div>
-                  )}
-                </>
+                  </div>
+                ))
               ) : (
-                <div className="text-sm text-white/60">Tasks are not available for generated-only view.</div>
+                <div className="text-sm text-white/60">No tasks added yet.</div>
               )}
             </div>
 

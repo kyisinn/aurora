@@ -69,9 +69,10 @@
 //     </div>
 //   );
 // }
+
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type TimePreference = "morning" | "afternoon" | "evening";
@@ -98,6 +99,14 @@ type ScheduleBlock = {
   start: string;
   end: string;
   tag: ScheduleBlockTag;
+  priority?: string;
+};
+
+type ScheduleBlockFromApi = {
+  title: string;
+  start: string;
+  end: string;
+  tag: "Deep Work" | "Class" | "Break" | "Admin" | "Health";
   priority?: string;
 };
 
@@ -185,19 +194,18 @@ function mapPreviewTypeToTag(type: PreviewBlock["type"]): ScheduleBlockTag {
   return "Admin";
 }
 
+function mapScheduleTagToPreviewType(tag: ScheduleBlockFromApi["tag"]): PreviewBlock["type"] {
+  if (tag === "Break") return "break";
+  if (tag === "Deep Work") return "focus";
+  return "personal";
+}
+
 function PreviewTimeline({
   blocks,
 }: {
   blocks: PreviewBlock[];
 }) {
-  const parse = (t: string) => {
-    const [h, m] = t.split(":").map(Number);
-    return h * 60 + m;
-  };
-
-  const min = Math.min(...blocks.map((b) => parse(b.start)));
-  const max = Math.max(...blocks.map((b) => parse(b.end)));
-  const total = Math.max(1, max - min);
+  const sorted = [...blocks].sort((a, b) => a.start.localeCompare(b.start));
 
   const styleByType: Record<string, string> = {
     focus: "bg-gradient-to-br from-blue-500/85 to-indigo-600/85 border-blue-400/30",
@@ -206,48 +214,21 @@ function PreviewTimeline({
   };
 
   return (
-    <div className="relative h-[440px] rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-white/10 overflow-hidden">
-      <div className="absolute inset-0 opacity-15">
-        {Array.from({ length: 12 }).map((_, i) => (
-          <div
-            key={i}
-            className="absolute w-full border-t border-white/10"
-            style={{ top: `${(i / 12) * 100}%` }}
-          />
-        ))}
-      </div>
-
-      <div className="absolute left-0 top-0 bottom-0 w-16 bg-gradient-to-r from-slate-900/90 to-transparent border-r border-white/5 flex flex-col justify-between py-4 px-2">
-        {Array.from({ length: 8 }).map((_, i) => {
-          const t = min + (i * total) / 7;
-          const h = Math.floor(t / 60);
-          return (
-            <div key={i} className="text-[10px] text-white/40 font-mono text-right">
-              {h > 12 ? h - 12 : h}
-              {h >= 12 ? "pm" : "am"}
+    <div className="rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-white/10">
+      <div className="max-h-[440px] overflow-y-auto px-4 py-4 space-y-3">
+        {sorted.map((b, idx) => (
+          <div key={`${b.title}-${idx}`} className="flex items-start gap-3">
+            <div className="w-16 shrink-0 text-[11px] text-white/50 font-mono leading-4">
+              <div>{b.start}</div>
+              <div>{b.end}</div>
             </div>
-          );
-        })}
-      </div>
 
-      <div className="absolute left-16 right-4 top-0 bottom-0 py-4">
-        {blocks.map((b, idx) => {
-          const s = parse(b.start);
-          const e = parse(b.end);
-          const top = ((s - min) / total) * 100;
-          const height = ((e - s) / total) * 100;
-
-          return (
-            <div
-              key={idx}
-              className={`absolute left-0 right-0 rounded-xl border p-3 backdrop-blur-sm shadow-lg ${styleByType[b.type]}`}
-              style={{ top: `${top}%`, height: `${Math.max(height, 7)}%` }}
-            >
+            <div className={`flex-1 rounded-xl border p-3 shadow-lg ${styleByType[b.type]}`}>
               <div className="flex items-start justify-between gap-2">
                 <div className="min-w-0">
                   <div className="text-sm font-semibold text-white truncate">{b.title}</div>
                   <div className="text-[11px] text-white/70 mt-1">
-                    {b.start} – {b.end}
+                    {b.start} - {b.end}
                   </div>
                 </div>
                 {b.priority && (
@@ -265,8 +246,8 @@ function PreviewTimeline({
                 )}
               </div>
             </div>
-          );
-        })}
+          </div>
+        ))}
       </div>
     </div>
   );
@@ -292,10 +273,11 @@ export default function GetStartedPage() {
   const [newPriority, setNewPriority] = useState<TaskInput["priority"]>("medium");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [schedulePreview, setSchedulePreview] = useState<PreviewBlock[] | null>(null);
 
   const preview = useMemo(
-    () => generateDayPreview(preference, intensity, focusHours, tasks),
-    [preference, intensity, focusHours, tasks]
+    () => schedulePreview ?? generateDayPreview(preference, intensity, focusHours, tasks),
+    [schedulePreview, preference, intensity, focusHours, tasks]
   );
 
   const canContinueStep1 = true;
@@ -376,6 +358,46 @@ export default function GetStartedPage() {
       setSaving(false);
     }
   };
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadSchedulePreview() {
+      try {
+        const res = await fetch("/api/schedule");
+        if (!res.ok) return;
+        const data = await res.json();
+        const blocks = data?.blocks;
+        if (!active || !Array.isArray(blocks) || blocks.length === 0) return;
+
+        setSchedulePreview(
+          blocks.map((b: ScheduleBlockFromApi) => ({
+            title: b.title,
+            start: b.start,
+            end: b.end,
+            type: mapScheduleTagToPreviewType(b.tag),
+            priority: b.priority,
+          }))
+        );
+      } catch {
+        // ignore
+      }
+    }
+
+    loadSchedulePreview();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    const payload: SetupPayload = { preference, intensity, focusHours, tasks, preview };
+    try {
+      localStorage.setItem("aurora_setup", JSON.stringify(payload));
+    } catch {
+      // ignore
+    }
+  }, [preference, intensity, focusHours, tasks, preview]);
 
   return (
     <div className="min-h-screen bg-black text-white">
@@ -680,11 +702,10 @@ export default function GetStartedPage() {
                     Back
                   </button>
                   <button
-                    onClick={saveAndGoDashboard}
-                    disabled={saving}
+                    onClick={() => router.push("/generate")}
                     className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-500/25"
                   >
-                    {saving ? "Saving..." : "Continue to dashboard"}
+                    Continue
                   </button>
                 </div>
 
@@ -692,9 +713,7 @@ export default function GetStartedPage() {
                   <div className="text-xs text-red-300">{saveError}</div>
                 )}
 
-                <div className="text-xs text-white/45">
-                  This demo saves your setup to the database.
-                </div>
+
               </div>
             </div>
           </div>

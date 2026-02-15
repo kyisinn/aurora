@@ -90,20 +90,26 @@ export default function DashboardPage() {
     <div className="mx-auto max-w-6xl px-4 py-10 space-y-6">
       {/* Top bar */}
       <div className="flex items-center justify-between">
-        <button onClick={() => router.push("/dashboard")} className="flex items-center gap-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg shadow-blue-500/25">
+        <button
+          onClick={() => router.push("/dashboard-preview")}
+          className="group flex items-center gap-3 rounded-xl px-2 py-1 transition-colors hover:bg-white hover:text-black"
+        >
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg shadow-blue-500/25 transition-transform group-hover:scale-105">
             <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
           </div>
           <div>
-            <div className="text-sm font-bold">Aurora</div>
-            <div className="text-[10px] text-white/50">Dashboard</div>
+            <div className="text-sm font-bold group-hover:text-black">Preview Plans</div>
+            <div className="text-[10px] text-white/50 group-hover:text-black/60">Dashboard</div>
           </div>
         </button>
 
         <div className="flex gap-2">
-          <Button variant="ghost" onClick={() => router.push("/generate")}>
+          <Button
+            onClick={() => router.push("/get-started")}
+            className="w-auto bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 shadow-lg shadow-blue-500/25"
+          >
             Regenerate
           </Button>
           {editing ? (
