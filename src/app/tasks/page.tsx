@@ -16,20 +16,6 @@ type Task = {
   notes?: string;
 };
 
-const LS_TASKS = "aurora:tasks";
-
-function uid() {
-  return Math.random().toString(16).slice(2) + Date.now().toString(16);
-}
-
-function safeParse<T>(raw: string | null, fallback: T): T {
-  try {
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
 function todayISO() {
   const d = new Date();
   const yyyy = d.getFullYear();
@@ -58,16 +44,31 @@ export default function TasksPage() {
   const [priority, setPriority] = useState<Priority>("medium");
   const [notes, setNotes] = useState("");
 
-  // load tasks
-  useEffect(() => {
-    const saved = safeParse<Task[]>(localStorage.getItem(LS_TASKS), []);
-    setTasks(saved);
-  }, []);
+  // 1. Add a loading state to handle the transition
+  const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  // autosave
+  // 2. Updated load effect
+  const loadTasks = async () => {
+    try {
+      setIsLoading(true);
+      setLoadError(null);
+      const response = await fetch("/api/tasks");
+      if (!response.ok) throw new Error("Failed to fetch tasks");
+      const data = await response.json();
+      setTasks(data);
+    } catch (error) {
+      console.error("Database error:", error);
+      setLoadError("Failed to load tasks. Please try again.");
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   useEffect(() => {
-    localStorage.setItem(LS_TASKS, JSON.stringify(tasks));
-  }, [tasks]);
+    void loadTasks();
+  }, []);
 
   const stats = useMemo(() => {
     const totalMin = tasks.reduce((s, t) => s + (Number(t.minutes) || 0), 0);
@@ -85,33 +86,57 @@ export default function TasksPage() {
     setNotes("");
   }
 
-  function submit() {
+  async function submit() {
     const clean = title.trim();
     if (!clean) return alert("Please enter a task title.");
     if (!minutes || minutes < 10) return alert("Duration must be at least 10 minutes.");
     if (!due) return alert("Please select a due date.");
 
-    if (editingId) {
-      setTasks((prev) =>
-        prev.map((t) =>
-          t.id === editingId ? { ...t, title: clean, minutes, due, priority, notes } : t
-        )
-      );
-      resetForm();
-      return;
+    setActionError(null);
+    try {
+      if (editingId) {
+        // Update existing task
+        const response = await fetch(`/api/tasks/${editingId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: clean,
+            minutes,
+            due,
+            priority,
+            notes: notes.trim() || null,
+          }),
+        });
+        if (!response.ok) throw new Error("Failed to update task");
+        const updated = await response.json();
+        setTasks((prev) =>
+          prev.map((t) => (t.id === editingId ? updated : t))
+        );
+        resetForm();
+        setActionError(null);
+      } else {
+        // Create new task
+        const response = await fetch("/api/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            title: clean,
+            minutes,
+            due,
+            priority,
+            notes: notes.trim() || null,
+          }),
+        });
+        if (!response.ok) throw new Error("Failed to create task");
+        const newTask = await response.json();
+        setTasks((prev) => [newTask, ...prev]);
+        resetForm();
+        setActionError(null);
+      }
+    } catch (error) {
+      console.error("Error saving task:", error);
+      setActionError("Failed to save task. Please try again.");
     }
-
-    const t: Task = {
-      id: uid(),
-      title: clean,
-      minutes,
-      due,
-      priority,
-      notes: notes.trim() || undefined,
-    };
-
-    setTasks((prev) => [t, ...prev]);
-    resetForm();
   }
 
   function startEdit(t: Task) {
@@ -123,18 +148,46 @@ export default function TasksPage() {
     setNotes(t.notes || "");
   }
 
-  function remove(id: string) {
-    setTasks((prev) => prev.filter((t) => t.id !== id));
-    if (editingId === id) resetForm();
+  async function remove(id: string) {
+    setActionError(null);
+    try {
+      const response = await fetch(`/api/tasks/${id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error("Failed to delete task");
+      setTasks((prev) => prev.filter((t) => t.id !== id));
+      if (editingId === id) resetForm();
+      setActionError(null);
+    } catch (error) {
+      console.error("Error deleting task:", error);
+      setActionError("Failed to delete task. Please try again.");
+    }
   }
 
-  function seedExamples() {
-    const seed: Task[] = [
-      { id: uid(), title: "Finish assignment draft", minutes: 120, due: todayISO(), priority: "high" },
-      { id: uid(), title: "Read chapter + take notes", minutes: 90, due: todayISO(), priority: "medium" },
-      { id: uid(), title: "Workout / walk", minutes: 45, due: todayISO(), priority: "low" },
+  async function seedExamples() {
+    const examples = [
+      { title: "Finish assignment draft", minutes: 120, due: todayISO(), priority: "high" as Priority },
+      { title: "Read chapter + take notes", minutes: 90, due: todayISO(), priority: "medium" as Priority },
+      { title: "Workout / walk", minutes: 45, due: todayISO(), priority: "low" as Priority },
     ];
-    setTasks((prev) => [...seed, ...prev]);
+
+    setActionError(null);
+    try {
+      for (const example of examples) {
+        const response = await fetch("/api/tasks", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...example, notes: null }),
+        });
+        if (!response.ok) throw new Error("Failed to create example task");
+        const newTask = await response.json();
+        setTasks((prev) => [newTask, ...prev]);
+      }
+      setActionError(null);
+    } catch (error) {
+      console.error("Error seeding examples:", error);
+      setActionError("Failed to add example tasks.");
+    }
   }
 
   return (
@@ -271,9 +324,11 @@ export default function TasksPage() {
                 )}
               </div>
 
-              <div className="text-xs text-white/40">
-                Saved to <code>localStorage</code>: <code>aurora:tasks</code>
-              </div>
+              {actionError ? (
+                <div className="text-xs text-red-300">{actionError}</div>
+              ) : null}
+
+              <div className="text-xs text-white/40">Saved to database</div>
             </div>
           </Card>
         </div>
@@ -292,9 +347,27 @@ export default function TasksPage() {
             </div>
 
             <div className="mt-4 space-y-2">
-              {!tasks.length ? (
-                <div className="rounded-3xl border border-white/10 bg-black/20 p-6 text-sm text-white/60">
-                  No tasks yet. Add your first task on the left.
+              {isLoading ? (
+                <div className="rounded-3xl border border-white/10 bg-black/20 p-6 animate-pulse">
+                  <div className="h-3 w-1/3 rounded bg-white/10" />
+                  <div className="mt-3 h-3 w-2/3 rounded bg-white/10" />
+                  <div className="mt-3 h-3 w-1/2 rounded bg-white/10" />
+                </div>
+              ) : loadError ? (
+                <div className="rounded-3xl border border-rose-500/30 bg-rose-500/10 p-6 text-sm text-rose-200">
+                  <div className="font-semibold">Could not load tasks</div>
+                  <div className="mt-1 text-xs text-rose-200/80">{loadError}</div>
+                  <button
+                    type="button"
+                    onClick={loadTasks}
+                    className="mt-4 rounded-2xl border border-rose-500/40 bg-rose-500/20 px-3 py-2 text-xs font-semibold hover:bg-rose-500/30"
+                  >
+                    Retry
+                  </button>
+                </div>
+              ) : !tasks.length ? (
+                <div className="rounded-3xl border border-white/10 bg-black/20 p-4 text-sm text-white/60">
+                  No tasks yet. Add one to get started.
                 </div>
               ) : (
                 tasks

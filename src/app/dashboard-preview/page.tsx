@@ -195,26 +195,82 @@ function Timeline({
   );
 }
 
+type ScheduleBlock = {
+  title: string;
+  start: string;
+  end: string;
+  tag?: string;
+  type?: string;
+  priority?: string;
+};
+
+type ScheduleRecord = {
+  blocks?: ScheduleBlock[];
+  userPrompt?: string | null;
+};
+
+function mapTagToType(tag?: string) {
+  if (tag === "Deep Work") return "focus";
+  if (tag === "Break") return "break";
+  if (tag === "Class") return "class";
+  if (tag === "Admin") return "personal";
+  if (tag === "Health") return "personal";
+  return "focus";
+}
+
 export default function DashboardPreviewPage() {
   const router = useRouter();
   const [setup, setSetup] = useState<SetupPayload | null>(null);
+  const [schedule, setSchedule] = useState<ScheduleRecord | null>(null);
 
   useEffect(() => {
-    const raw = localStorage.getItem("aurora_setup");
-    if (!raw) return;
-    try {
-      setSetup(JSON.parse(raw));
-    } catch {
-      // ignore
+    let active = true;
+
+    async function load() {
+      try {
+        const res = await fetch("/api/schedule");
+        if (res.ok) {
+          const data = await res.json();
+          if (active && data?.blocks) setSchedule(data);
+        }
+      } catch {
+        // ignore
+      }
+
+      try {
+        const raw = localStorage.getItem("aurora_setup");
+        if (raw && active) setSetup(JSON.parse(raw));
+      } catch {
+        // ignore
+      }
     }
+
+    load();
+    return () => {
+      active = false;
+    };
   }, []);
 
+  const generatedBlocks = useMemo(() => {
+    const raw = schedule?.blocks;
+    if (!raw || !Array.isArray(raw)) return [];
+
+    return raw.map((b) => ({
+      title: b.title,
+      start: b.start,
+      end: b.end,
+      type: b.type ?? mapTagToType(b.tag),
+      priority: b.priority,
+    }));
+  }, [schedule]);
+
   const blocks = useMemo(() => {
+    if (generatedBlocks.length) return generatedBlocks;
     if (!setup) return [];
     return setup.preview?.length
       ? setup.preview
       : generateDayPreview(setup.preference, setup.intensity, setup.focusHours, setup.tasks);
-  }, [setup]);
+  }, [generatedBlocks, setup]);
 
   const totals = useMemo(() => {
     if (!blocks.length) return { focusMin: 0, breakMin: 0, taskCount: 0 };
@@ -228,7 +284,11 @@ export default function DashboardPreviewPage() {
     return { focusMin, breakMin, taskCount: blocks.filter((b) => b.type === "focus").length };
   }, [blocks]);
 
-  if (!setup) {
+  const hasGenerated = generatedBlocks.length > 0;
+  const taskCount = setup ? setup.tasks.length : generatedBlocks.filter((b) => b.type === "focus").length;
+  const highCount = setup ? setup.tasks.filter((t) => t.priority === "high").length : 0;
+
+  if (!setup && generatedBlocks.length === 0) {
     return (
       <div className="min-h-screen bg-black text-white">
         <main className="max-w-6xl mx-auto px-6 py-16">
@@ -238,7 +298,7 @@ export default function DashboardPreviewPage() {
               Please complete the Get Started flow first.
             </div>
             <button
-              onClick={() => router.push("/get-started")}
+              onClick={() => router.push(hasGenerated ? "/generate" : "/get-started")}
               className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 px-7 py-3 rounded-xl font-semibold shadow-lg shadow-blue-500/25"
             >
               Go to Get Started
@@ -268,13 +328,13 @@ export default function DashboardPreviewPage() {
 
           <div className="flex items-center gap-3">
             <button
-              onClick={() => router.push("/get-started")}
+              onClick={() => router.push(hasGenerated ? "/generate" : "/get-started")}
               className="text-sm text-white/70 hover:text-white transition px-4 py-2"
             >
               Edit setup
             </button>
             <button
-              onClick={() => router.push("/get-started")}
+              onClick={() => router.push(hasGenerated ? "/generate" : "/get-started")}
               className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl shadow-lg shadow-blue-500/25"
             >
               Regenerate
@@ -289,17 +349,26 @@ export default function DashboardPreviewPage() {
           <div className="space-y-2">
             <h1 className="text-4xl font-bold tracking-tight">Your schedule today</h1>
             <div className="flex flex-wrap gap-2">
-              <Badge text={`Best time: ${setup.preference}`} />
-              <Badge text={`Intensity: ${setup.intensity}`} />
-              <Badge text={`Focus/day: ${setup.focusHours}h`} />
-              <Badge text={`Tasks: ${setup.tasks.length}`} />
+              {setup ? (
+                <>
+                  <Badge text={`Best time: ${setup.preference}`} />
+                  <Badge text={`Intensity: ${setup.intensity}`} />
+                  <Badge text={`Focus/day: ${setup.focusHours}h`} />
+                  <Badge text={`Tasks: ${taskCount}`} />
+                </>
+              ) : (
+                <>
+                  <Badge text="Source: Generated" />
+                  <Badge text={`Blocks: ${generatedBlocks.length}`} />
+                </>
+              )}
             </div>
           </div>
 
           <div className="flex gap-3">
             <button
               className="rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 px-5 py-3 font-semibold transition"
-              onClick={() => router.push("/get-started")}
+              onClick={() => router.push(hasGenerated ? "/generate" : "/get-started")}
             >
               Add more tasks
             </button>
@@ -325,7 +394,7 @@ export default function DashboardPreviewPage() {
             sub="Auto-scheduled recovery"
           />
           <StatCard
-            value={`${setup.tasks.filter(t => t.priority === "high").length}`}
+            value={`${highCount}`}
             label="High priority tasks"
             sub="Handled first in schedule"
           />
@@ -352,7 +421,7 @@ export default function DashboardPreviewPage() {
                 <div className="text-lg font-bold">Your inputs</div>
               </div>
               <button
-                onClick={() => router.push("/get-started")}
+                onClick={() => router.push(hasGenerated ? "/generate" : "/get-started")}
                 className="text-sm text-blue-300 hover:text-blue-200 transition"
               >
                 Edit
@@ -360,33 +429,38 @@ export default function DashboardPreviewPage() {
             </div>
 
             <div className="space-y-3 max-h-[520px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-              {setup.tasks.map((t, idx) => (
-                <div
-                  key={`${t.title}-${idx}`}
-                  className="rounded-2xl border border-white/10 bg-white/5 p-4 hover:border-white/20 hover:bg-white/10 transition"
-                >
-                  <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-sm font-semibold text-white truncate">{t.title}</div>
-                      <div className="text-xs text-white/55 mt-1">{t.minutes} min</div>
-                    </div>
-                    <span
-                      className={`text-[10px] px-2 py-1 rounded-lg border whitespace-nowrap ${
-                        t.priority === "high"
-                          ? "bg-red-500/20 border-red-500/40 text-red-200"
-                          : t.priority === "medium"
-                          ? "bg-yellow-500/20 border-yellow-500/40 text-yellow-200"
-                          : "bg-green-500/20 border-green-500/40 text-green-200"
-                      }`}
+              {setup ? (
+                <>
+                  {setup.tasks.map((t, idx) => (
+                    <div
+                      key={`${t.title}-${idx}`}
+                      className="rounded-2xl border border-white/10 bg-white/5 p-4 hover:border-white/20 hover:bg-white/10 transition"
                     >
-                      {t.priority}
-                    </span>
-                  </div>
-                </div>
-              ))}
-
-              {setup.tasks.length === 0 && (
-                <div className="text-sm text-white/60">No tasks added yet.</div>
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-sm font-semibold text-white truncate">{t.title}</div>
+                          <div className="text-xs text-white/55 mt-1">{t.minutes} min</div>
+                        </div>
+                        <span
+                          className={`text-[10px] px-2 py-1 rounded-lg border whitespace-nowrap ${
+                            t.priority === "high"
+                              ? "bg-red-500/20 border-red-500/40 text-red-200"
+                              : t.priority === "medium"
+                              ? "bg-yellow-500/20 border-yellow-500/40 text-yellow-200"
+                              : "bg-green-500/20 border-green-500/40 text-green-200"
+                          }`}
+                        >
+                          {t.priority}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  {setup.tasks.length === 0 && (
+                    <div className="text-sm text-white/60">No tasks added yet.</div>
+                  )}
+                </>
+              ) : (
+                <div className="text-sm text-white/60">Tasks are not available for generated-only view.</div>
               )}
             </div>
 

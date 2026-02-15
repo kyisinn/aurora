@@ -83,6 +83,38 @@ type TaskInput = {
   priority: "high" | "medium" | "low";
 };
 
+type PreviewBlock = {
+  title: string;
+  start: string;
+  end: string;
+  type: "focus" | "break" | "personal";
+  priority?: string;
+};
+
+type ScheduleBlockTag = "Deep Work" | "Break" | "Admin";
+
+type ScheduleBlock = {
+  title: string;
+  start: string;
+  end: string;
+  tag: ScheduleBlockTag;
+  priority?: string;
+};
+
+type PreferencesPayload = {
+  timePreference: TimePreference;
+  intensity: Intensity;
+  focusHours: number;
+};
+
+type SetupPayload = {
+  preference: TimePreference;
+  intensity: Intensity;
+  focusHours: number;
+  tasks: TaskInput[];
+  preview: PreviewBlock[];
+};
+
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
@@ -111,11 +143,11 @@ function generateDayPreview(
     return p[b.priority] - p[a.priority];
   });
 
-  const blocks: { title: string; start: string; end: string; type: string; priority?: string }[] = [];
+  const blocks: PreviewBlock[] = [];
 
   let usedFocus = 0;
 
-  const add = (title: string, dur: number, type: string, priority?: string) => {
+  const add = (title: string, dur: number, type: "focus" | "break" | "personal", priority?: string) => {
     const start = cur;
     const end = cur + dur;
     blocks.push({ title, start: formatTime(start), end: formatTime(end), type, priority });
@@ -147,10 +179,16 @@ function generateDayPreview(
   return blocks.slice(0, 10);
 }
 
+function mapPreviewTypeToTag(type: PreviewBlock["type"]): ScheduleBlockTag {
+  if (type === "focus") return "Deep Work";
+  if (type === "break") return "Break";
+  return "Admin";
+}
+
 function PreviewTimeline({
   blocks,
 }: {
-  blocks: { title: string; start: string; end: string; type: string; priority?: string }[];
+  blocks: PreviewBlock[];
 }) {
   const parse = (t: string) => {
     const [h, m] = t.split(":").map(Number);
@@ -252,6 +290,8 @@ export default function GetStartedPage() {
   const [newTitle, setNewTitle] = useState("");
   const [newMinutes, setNewMinutes] = useState(45);
   const [newPriority, setNewPriority] = useState<TaskInput["priority"]>("medium");
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
   const preview = useMemo(
     () => generateDayPreview(preference, intensity, focusHours, tasks),
@@ -282,11 +322,59 @@ export default function GetStartedPage() {
     setTasks((prev) => prev.filter((_, i) => i !== idx));
   };
 
-  const saveAndGoDashboard = () => {
-    // For now: store in localStorage (no backend needed)
-    const payload = { preference, intensity, focusHours, tasks, preview };
-    localStorage.setItem("aurora_setup", JSON.stringify(payload));
-    router.push("/dashboard-preview");
+  const saveAndGoDashboard = async () => {
+    setSaving(true);
+    setSaveError(null);
+
+    const payload: SetupPayload = { preference, intensity, focusHours, tasks, preview };
+    const preferences: PreferencesPayload = {
+      timePreference: preference,
+      intensity,
+      focusHours,
+    };
+
+    const scheduleBlocks: ScheduleBlock[] = preview.map((b) => ({
+      title: b.title,
+      start: b.start,
+      end: b.end,
+      tag: mapPreviewTypeToTag(b.type),
+      priority: b.priority,
+    }));
+
+    try {
+      const existingProfileRes = await fetch("/api/profile");
+      const existingProfile = existingProfileRes.ok ? await existingProfileRes.json() : null;
+
+      const [profileRes, scheduleRes] = await Promise.all([
+        fetch("/api/profile", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            preferences,
+            tools: existingProfile?.tools ?? null,
+            scheduleDraft: payload,
+          }),
+        }),
+        fetch("/api/schedule", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            blocks: scheduleBlocks,
+            userPrompt: null,
+          }),
+        }),
+      ]);
+
+      if (!profileRes.ok || !scheduleRes.ok) {
+        throw new Error("Save failed");
+      }
+
+      router.push("/dashboard-preview");
+    } catch {
+      setSaveError("Failed to save setup. Please try again.");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -539,7 +627,7 @@ export default function GetStartedPage() {
                   <button
                     disabled={!canContinueStep2}
                     onClick={() => setStep(3)}
-                    className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-500/25"
+                    className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-500/25"
                   >
                     Preview schedule
                   </button>
@@ -593,14 +681,19 @@ export default function GetStartedPage() {
                   </button>
                   <button
                     onClick={saveAndGoDashboard}
+                    disabled={saving}
                     className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-500/25"
                   >
-                    Continue to dashboard
+                    {saving ? "Saving..." : "Continue to dashboard"}
                   </button>
                 </div>
 
+                {saveError && (
+                  <div className="text-xs text-red-300">{saveError}</div>
+                )}
+
                 <div className="text-xs text-white/45">
-                  This demo saves your setup to <span className="text-white/70">localStorage</span>.
+                  This demo saves your setup to the database.
                 </div>
               </div>
             </div>

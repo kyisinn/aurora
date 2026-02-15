@@ -1,11 +1,31 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/component/card";
 import { Button } from "@/component/button";
 
 type BestTime = "morning" | "afternoon" | "night";
+
+type PreferencesPayload = {
+  bestTime: BestTime;
+  sleepHours: number;
+  focusHours: number;
+  rigor: number;
+  breakStyle: "light" | "balanced" | "strict";
+};
+
+type ProfilePayload = {
+  preferences?: PreferencesPayload | null;
+  tools?: Record<string, boolean> | null;
+  scheduleDraft?: unknown | null;
+};
+
+const defaultTools = {
+  google: false,
+  notion: false,
+  canvas: false,
+};
 
 function Pill({
   active,
@@ -51,6 +71,72 @@ export default function PreferencesPage() {
 
     return `${time} • ${blocks} • ${breaks} • ${focusHours}h focus/day • ${sleepHours}h sleep`;
   }, [bestTime, rigor, breakStyle, focusHours, sleepHours]);
+
+  const [profile, setProfile] = useState<ProfilePayload>({});
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadProfile() {
+      try {
+        const res = await fetch("/api/profile");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data || !active) return;
+
+        setProfile(data);
+
+        const prefs = data.preferences as PreferencesPayload | undefined;
+        if (prefs?.bestTime) setBestTime(prefs.bestTime);
+        if (typeof prefs?.sleepHours === "number") setSleepHours(prefs.sleepHours);
+        if (typeof prefs?.focusHours === "number") setFocusHours(prefs.focusHours);
+        if (typeof prefs?.rigor === "number") setRigor(prefs.rigor);
+        if (prefs?.breakStyle) setBreakStyle(prefs.breakStyle);
+      } catch {
+        // ignore
+      }
+    }
+
+    loadProfile();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function savePreferences() {
+    const preferences: PreferencesPayload = {
+      bestTime,
+      sleepHours,
+      focusHours,
+      rigor,
+      breakStyle,
+    };
+
+    const payload = {
+      preferences,
+      tools: profile.tools ?? defaultTools,
+      scheduleDraft: profile.scheduleDraft ?? null,
+    };
+
+    try {
+      const res = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) return;
+      const data = await res.json();
+      setProfile(data);
+    } catch {
+      // ignore
+    }
+  }
+
+  async function persistAndGo(path: string) {
+    await savePreferences();
+    router.push(path);
+  }
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 space-y-6">
@@ -202,7 +288,7 @@ export default function PreferencesPage() {
 
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <button
-                onClick={() => router.push("/onboarding/review")}
+                onClick={() => persistAndGo("/onboarding/review")}
                 className="text-sm text-white/60 hover:text-white"
               >
                 Skip for now
@@ -212,7 +298,7 @@ export default function PreferencesPage() {
                 <Button variant="ghost" onClick={() => router.push("/onboarding/connect-tools")}>
                   Back
                 </Button>
-                <Button onClick={() => router.push("/onboarding/review")}>
+                <Button onClick={() => persistAndGo("/onboarding/review")}>
                   Next →
                 </Button>
               </div>

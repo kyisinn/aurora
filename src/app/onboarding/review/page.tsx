@@ -1,11 +1,23 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/component/card";
 import { Button } from "@/component/button";
 
 type ToolKey = "google" | "notion" | "canvas";
+
+type ProfilePayload = {
+  preferences?: Record<string, unknown> | null;
+  tools?: Record<ToolKey, boolean> | null;
+  scheduleDraft?: unknown | null;
+};
+
+const defaultTools: Record<ToolKey, boolean> = {
+  google: true,
+  notion: false,
+  canvas: false,
+};
 
 function Pill({ children }: { children: React.ReactNode }) {
   return (
@@ -46,13 +58,8 @@ function StepRow({
 export default function ReviewPage() {
   const router = useRouter();
 
-  // Website-realistic: we show a "review" summary even without backend.
-  // Later you can load these from localStorage/db.
-  const [tools, setTools] = useState<Record<ToolKey, boolean>>({
-    google: true,
-    notion: false,
-    canvas: false,
-  });
+  const [profile, setProfile] = useState<ProfilePayload>({});
+  const [tools, setTools] = useState<Record<ToolKey, boolean>>(defaultTools);
 
   const connectedCount = Object.values(tools).filter(Boolean).length;
 
@@ -63,10 +70,61 @@ export default function ReviewPage() {
     return connected.length ? connected.join(", ") : "none";
   }, [tools]);
 
-  function generateDemoSchedule() {
-  localStorage.setItem("aurora:tools", JSON.stringify(tools));
-  router.push("/generate");
-}
+  async function generateDemoSchedule() {
+    await saveProfile(tools);
+    router.push("/generate");
+  }
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadProfile() {
+      try {
+        const res = await fetch("/api/profile");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data || !active) return;
+
+        setProfile(data);
+        if (data.tools) setTools(data.tools as Record<ToolKey, boolean>);
+      } catch {
+        // ignore
+      }
+    }
+
+    loadProfile();
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  async function saveProfile(nextTools: Record<ToolKey, boolean>) {
+    try {
+      const payload = {
+        preferences: profile.preferences ?? null,
+        tools: nextTools,
+        scheduleDraft: profile.scheduleDraft ?? null,
+      };
+
+      const res = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) return;
+      const data = await res.json();
+      setProfile(data);
+    } catch {
+      // ignore
+    }
+  }
+
+  function updateTools(next: Record<ToolKey, boolean>) {
+    setTools(next);
+    void saveProfile(next);
+  }
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 space-y-6">
       {/* Top bar */}
@@ -159,21 +217,21 @@ export default function ReviewPage() {
                 <div className="text-sm font-semibold">Google Calendar</div>
                 <Toggle
                   on={tools.google}
-                  onToggle={() => setTools((p) => ({ ...p, google: !p.google }))}
+                  onToggle={() => updateTools({ ...tools, google: !tools.google })}
                 />
               </div>
               <div className="flex items-center justify-between">
                 <div className="text-sm font-semibold">Notion</div>
                 <Toggle
                   on={tools.notion}
-                  onToggle={() => setTools((p) => ({ ...p, notion: !p.notion }))}
+                  onToggle={() => updateTools({ ...tools, notion: !tools.notion })}
                 />
               </div>
               <div className="flex items-center justify-between">
                 <div className="text-sm font-semibold">Canvas</div>
                 <Toggle
                   on={tools.canvas}
-                  onToggle={() => setTools((p) => ({ ...p, canvas: !p.canvas }))}
+                  onToggle={() => updateTools({ ...tools, canvas: !tools.canvas })}
                 />
               </div>
 

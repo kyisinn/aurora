@@ -1,0 +1,74 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+}
+
+// 1. NEW: The "Root" owner of all data
+model Session {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relationships (A session "has many" of these)
+  tasks     Task[]
+  profile   Profile?
+  schedules Schedule[]
+  plans     Plan[]
+}
+
+// 2. UPDATED: Added 'sessionId' and relation
+model Task {
+  id        String   @id @default(uuid())
+  title     String
+  minutes   Int
+  due       String
+  priority  String
+  notes     String?  @db.Text
+  completed Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  // Link to Session
+  sessionId String
+  session   Session @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+// 3. NEW: Stores user preferences & tools
+model Profile {
+  id            String   @id @default(uuid())
+  preferences   Json?    // Stores { theme, workHours, etc. }
+  tools         Json?    // Stores list of tools
+  scheduleDraft Json?    // Stores the temporary draft
+  
+  sessionId     String   @unique // One profile per session
+  session       Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+// 4. NEW: Stores generated schedules
+model Schedule {
+  id         String   @id @default(uuid())
+  blocks     Json     // Stores the array of Block objects
+  userPrompt String?  @db.Text
+  createdAt  DateTime @default(now())
+
+  sessionId  String
+  session    Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+// 5. NEW: Stores strategic plans
+model Plan {
+  id        String   @id @default(uuid())
+  content   String   @db.Text // The plan text
+  createdAt DateTime @default(now())
+
+  sessionId String
+  session   Session  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}

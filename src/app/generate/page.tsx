@@ -17,102 +17,6 @@ type Task = {
   priority: Priority;
 };
 
-type BlockTag = "Deep Work" | "Class" | "Break" | "Admin" | "Health";
-
-type Block = {
-  title: string;
-  start: string;
-  end: string;
-  tag: BlockTag;
-};
-
-/* ================= STORAGE KEYS ================= */
-
-const LS = {
-  tasks: "aurora:tasks",
-  generated: "aurora:generatedSchedule",
-  userPrompt: "aurora:userPrompt",
-};
-
-/* ================= HELPERS ================= */
-
-function toMin(hhmm: string) {
-  const [h, m] = hhmm.split(":").map(Number);
-  return h * 60 + m;
-}
-
-function toHHMM(min: number) {
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  const pad = (x: number) => String(x).padStart(2, "0");
-  return `${pad(h)}:${pad(m)}`;
-}
-
-function priorityWeight(p: Priority) {
-  if (p === "high") return 0;
-  if (p === "medium") return 1;
-  return 2;
-}
-
-/* ================= CORE GENERATION ================= */
-
-function generateSchedule(tasks: Task[], userPrompt: string): Block[] {
-  let current = toMin("09:00");
-  const endDay = toMin("18:00");
-  const blocks: Block[] = [];
-
-  // Sort tasks: high priority + earliest due first
-  const ordered = [...tasks].sort((a, b) => {
-    const p = priorityWeight(a.priority) - priorityWeight(b.priority);
-    if (p !== 0) return p;
-    return a.due.localeCompare(b.due);
-  });
-
-  // Morning routine
-  blocks.push({
-    title: "Morning routine",
-    start: "08:00",
-    end: "08:30",
-    tag: "Health",
-  });
-
-  // Main task blocks
-  for (const task of ordered) {
-    if (current + task.minutes > endDay) break;
-
-    blocks.push({
-      title: `Deep Work: ${task.title}`,
-      start: toHHMM(current),
-      end: toHHMM(current + task.minutes),
-      tag: "Deep Work",
-    });
-
-    current += task.minutes;
-
-    // Break after each task
-    blocks.push({
-      title: "Break",
-      start: toHHMM(current),
-      end: toHHMM(current + 10),
-      tag: "Break",
-    });
-
-    current += 10;
-  }
-
-  // Admin wrap-up
-  if (current + 30 <= endDay) {
-    blocks.push({
-      title: "Admin / Review",
-      start: toHHMM(current),
-      end: toHHMM(current + 30),
-      tag: "Admin",
-    });
-  }
-
-  return blocks;
-}
-
 /* ================= PAGE ================= */
 
 export default function GeneratePage() {
@@ -122,16 +26,40 @@ export default function GeneratePage() {
   const [userPrompt, setUserPrompt] = useState("");
   const [loading, setLoading] = useState(false);
 
-  /* Load tasks + prompt */
+  /* Load tasks + previous prompt */
   useEffect(() => {
-    try {
-      const t = JSON.parse(localStorage.getItem(LS.tasks) || "[]");
-      setTasks(Array.isArray(t) ? t : []);
-    } catch {
-      setTasks([]);
+    let active = true;
+
+    async function load() {
+      try {
+        const [tasksRes, scheduleRes] = await Promise.all([
+          fetch("/api/tasks"),
+          fetch("/api/schedule"),
+        ]);
+
+        if (tasksRes.ok) {
+          const data: Task[] = await tasksRes.json();
+          if (active) setTasks(data);
+        } else if (active) {
+          setTasks([]);
+        }
+
+        if (scheduleRes.ok) {
+          const schedule = await scheduleRes.json();
+          // Pre-fill the prompt if they have one saved
+          if (schedule?.userPrompt && active) {
+            setUserPrompt(String(schedule.userPrompt));
+          }
+        }
+      } catch {
+        if (active) setTasks([]);
+      }
     }
 
-    setUserPrompt(localStorage.getItem(LS.userPrompt) || "");
+    load();
+    return () => {
+      active = false;
+    };
   }, []);
 
   /* AI-style summary prompt (preview only) */
@@ -152,15 +80,37 @@ Rules:
 - Keep schedule realistic`;
   }, [tasks, userPrompt]);
 
-  function handleGenerate() {
-    setLoading(true);
-    localStorage.setItem(LS.userPrompt, userPrompt);
+  async function handleGenerate() {
+    if (!tasks.length) {
+      alert("Add at least one task before generating a schedule.");
+      return;
+    }
 
-    setTimeout(() => {
-      const blocks = generateSchedule(tasks, userPrompt);
-      localStorage.setItem(LS.generated, JSON.stringify(blocks));
+    setLoading(true);
+    try {
+      // 1. Send raw data to our new AI route
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tasks,
+          userPrompt,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || "AI generation failed");
+      }
+
+      // 2. Success! The backend has already saved the schedule.
       router.push("/dashboard-preview");
-    }, 700);
+    } catch (err) {
+      console.error("Failed to generate schedule", err);
+      alert("Failed to generate schedule. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -170,7 +120,7 @@ Rules:
         <div>
           <div className="text-sm font-semibold">Generate schedule</div>
           <div className="text-xs text-white/50">
-            Aurora uses your tasks to build a realistic plan
+            Aurora uses AI to build a realistic plan for you
           </div>
         </div>
         <Button variant="ghost" onClick={() => router.push("/tasks")}>
@@ -187,11 +137,11 @@ Rules:
               value={userPrompt}
               onChange={(e) => setUserPrompt(e.target.value)}
               rows={8}
-              placeholder="e.g. I have an exam tomorrow, focus more in the morning"
+              placeholder="e.g. I have an exam tomorrow, focus more in the morning. Also, I need a long lunch break."
               className="w-full rounded-3xl border border-white/10 bg-black/20 px-4 py-3 text-sm outline-none focus:border-violet-500"
             />
-            <Button onClick={handleGenerate} disabled={loading}>
-              {loading ? "Generating…" : "Generate schedule →"}
+            <Button onClick={handleGenerate} disabled={loading || tasks.length === 0}>
+              {loading ? "Generating with AI…" : "Generate schedule →"}
             </Button>
           </div>
         </Card>
@@ -199,7 +149,7 @@ Rules:
         {/* AI prompt preview */}
         <Card>
           <div className="space-y-3">
-            <div className="text-sm font-semibold">AI prompt preview</div>
+            <div className="text-sm font-semibold">Context preview</div>
             <textarea
               value={autoPrompt}
               readOnly

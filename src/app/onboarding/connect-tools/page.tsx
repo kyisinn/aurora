@@ -1,7 +1,6 @@
-
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/component/card";
 import { Button } from "@/component/button";
@@ -13,6 +12,18 @@ type ToolItem = {
   desc: string;
   statusHint: string;
   badge?: string;
+};
+
+type ProfilePayload = {
+  preferences?: Record<string, unknown> | null;
+  tools?: Record<ToolKey, boolean> | null;
+  scheduleDraft?: unknown | null;
+};
+
+const defaultTools: Record<ToolKey, boolean> = {
+  google: true,
+  notion: false,
+  canvas: false,
 };
 
 function StatusPill({ on }: { on: boolean }) {
@@ -50,11 +61,8 @@ function Toggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
 export default function ConnectToolsPage() {
   const router = useRouter();
 
-  const [tools, setTools] = useState<Record<ToolKey, boolean>>({
-    google: true,
-    notion: false,
-    canvas: false,
-  });
+  const [profile, setProfile] = useState<ProfilePayload>({});
+  const [tools, setTools] = useState<Record<ToolKey, boolean>>(defaultTools);
 
   const toolItems: ToolItem[] = useMemo(
     () => [
@@ -84,13 +92,75 @@ export default function ConnectToolsPage() {
   const connectedCount = Object.values(tools).filter(Boolean).length;
   const progress = 1; // step 1 of 3
 
-  const toggle = (k: ToolKey) => setTools((p) => ({ ...p, [k]: !p[k] }));
+  const toggle = (k: ToolKey) => {
+    const next = { ...tools, [k]: !tools[k] };
+    updateTools(next);
+  };
 
   function connectNow(k: ToolKey) {
-    // Real app: OAuth/Integration flow
-    // Website-realistic: simulate “connect”
-    setTools((p) => ({ ...p, [k]: true }));
+    const next = { ...tools, [k]: true };
+    updateTools(next);
   }
+
+  function disconnectNow(k: ToolKey) {
+    const next = { ...tools, [k]: false };
+    updateTools(next);
+  }
+
+  async function saveProfile(nextTools: Record<ToolKey, boolean>) {
+    try {
+      const payload = {
+        preferences: profile.preferences ?? null,
+        tools: nextTools,
+        scheduleDraft: profile.scheduleDraft ?? null,
+      };
+
+      const res = await fetch("/api/profile", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+
+      if (!res.ok) return;
+      const data = await res.json();
+      setProfile(data);
+    } catch {
+      // ignore
+    }
+  }
+
+  function updateTools(next: Record<ToolKey, boolean>) {
+    setTools(next);
+    void saveProfile(next);
+  }
+
+  const handleNext = async () => {
+    await saveProfile(tools);
+    router.push("/onboarding/preferences");
+  };
+
+  useEffect(() => {
+    let active = true;
+
+    async function loadProfile() {
+      try {
+        const res = await fetch("/api/profile");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data || !active) return;
+
+        setProfile(data);
+        if (data.tools) setTools(data.tools as Record<ToolKey, boolean>);
+      } catch {
+        // ignore
+      }
+    }
+
+    loadProfile();
+    return () => {
+      active = false;
+    };
+  }, []);
 
   return (
     <div className="mx-auto max-w-5xl px-4 py-10 space-y-6">
@@ -180,7 +250,7 @@ export default function ConnectToolsPage() {
                     </button>
                   ) : (
                     <button
-                      onClick={() => setTools((p) => ({ ...p, [t.key]: false }))}
+                      onClick={() => disconnectNow(t.key)}
                       className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold hover:bg-white/10"
                     >
                       Disconnect
@@ -199,7 +269,7 @@ export default function ConnectToolsPage() {
       <Card>
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <button
-            onClick={() => router.push("/onboarding/preferences")}
+            onClick={handleNext}
             className="text-sm text-white/60 hover:text-white"
           >
             Set up later
@@ -210,7 +280,7 @@ export default function ConnectToolsPage() {
               Back
             </Button>
 
-            <Button onClick={() => router.push("/onboarding/preferences")}>
+            <Button onClick={handleNext}>
               Next →
             </Button>
           </div>

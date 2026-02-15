@@ -9,7 +9,6 @@ type BlockTag = "Deep Work" | "Class" | "Break" | "Admin" | "Health";
 type Block = { title: string; start: string; end: string; tag: BlockTag };
 
 const LS_AUTH = "aurora:authed";
-const LS_SCHEDULE = "aurora:generatedSchedule";
 
 function toMin(t: string) {
   const [h, m] = t.split(":").map(Number);
@@ -38,12 +37,27 @@ export default function DashboardPage() {
       return;
     }
 
-    const raw = localStorage.getItem(LS_SCHEDULE);
-    if (raw) {
-      const parsed = JSON.parse(raw) as Block[];
-      parsed.sort((a, b) => toMin(a.start) - toMin(b.start));
-      setBlocks(parsed);
+    let active = true;
+
+    async function loadSchedule() {
+      try {
+        const res = await fetch("/api/schedule");
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!data?.blocks || !active) return;
+
+        const parsed = data.blocks as Block[];
+        parsed.sort((a, b) => toMin(a.start) - toMin(b.start));
+        setBlocks(parsed);
+      } catch {
+        // ignore
+      }
     }
+
+    loadSchedule();
+    return () => {
+      active = false;
+    };
   }, [router]);
 
   const deepCount = useMemo(
@@ -51,10 +65,20 @@ export default function DashboardPage() {
     [blocks]
   );
 
-  function saveSchedule() {
-    localStorage.setItem(LS_SCHEDULE, JSON.stringify(blocks));
-    alert("Schedule saved ✅");
-    setEditing(false);
+  async function saveSchedule() {
+    try {
+      const res = await fetch("/api/schedule", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ blocks, userPrompt: null }),
+      });
+
+      if (!res.ok) throw new Error("save failed");
+      alert("Schedule saved ✅");
+      setEditing(false);
+    } catch {
+      alert("Failed to save schedule.");
+    }
   }
 
   function logout() {
@@ -97,7 +121,7 @@ export default function DashboardPage() {
         <Card>
           <div className="text-xs text-white/60">Status</div>
           <div className="mt-1 text-2xl font-bold">Saved</div>
-          <div className="mt-1 text-sm text-white/60">Local storage</div>
+          <div className="mt-1 text-sm text-white/60">Database</div>
         </Card>
 
         <Card>
@@ -132,9 +156,12 @@ export default function DashboardPage() {
                     <input
                       value={b.title}
                       onChange={(e) => {
-                        const copy = [...blocks];
-                        copy[idx] = { ...copy[idx], title: e.target.value };
-                        setBlocks(copy);
+                        const title = e.target.value;
+                        setBlocks((prev) =>
+                          prev.map((block, i) =>
+                            i === idx ? { ...block, title } : block
+                          )
+                        );
                       }}
                       className="w-full rounded-xl border border-white/10 bg-black/30 px-3 py-1 text-sm"
                     />
