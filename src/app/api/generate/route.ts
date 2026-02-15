@@ -3,7 +3,7 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { applySessionCookie, ensureSession } from "@/lib/session";
+import { ensureUser } from "@/lib/session";
 
 const ScheduleSchema = z.object({
   schedule: z.array(
@@ -39,7 +39,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { sessionId, isNew } = await ensureSession();
+    const { userId } = await ensureUser();
     const promptValue = parsed.data.userPrompt?.trim() || null;
 
     const { object } = await generateObject({
@@ -64,16 +64,16 @@ export async function POST(req: Request) {
 
     const saved = await prisma.schedule.create({
       data: {
-        sessionId,
+        userId,
         blocks: object.schedule,
         userPrompt: promptValue,
       },
     });
 
-    const res = NextResponse.json(saved);
-    if (isNew) applySessionCookie(res, sessionId);
-    return res;
-  } catch {
-    return NextResponse.json({ error: "Failed to generate plan" }, { status: 500 });
+    return NextResponse.json(saved);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to generate plan";
+    const status = message === "Unauthorized" ? 401 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

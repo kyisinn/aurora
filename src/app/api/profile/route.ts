@@ -1,32 +1,32 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { applySessionCookie, ensureSession } from "@/lib/session";
+import { ensureUser } from "@/lib/session";
 
 export async function GET() {
   try {
-    const { sessionId, isNew } = await ensureSession();
+    const { userId } = await ensureUser();
 
     const profile = await prisma.profile.findUnique({
-      where: { sessionId },
+      where: { userId },
     });
 
-    const res = NextResponse.json(profile ?? null);
-    if (isNew) applySessionCookie(res, sessionId);
-    return res;
-  } catch {
-    return NextResponse.json({ error: "Failed to load profile" }, { status: 500 });
+    return NextResponse.json(profile ?? null);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to load profile";
+    const status = message === "Unauthorized" ? 401 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }
 
 export async function PUT(req: Request) {
   try {
-    const { sessionId, isNew } = await ensureSession();
+    const { userId } = await ensureUser();
     const body = await req.json();
 
     const profile = await prisma.profile.upsert({
-      where: { sessionId },
+      where: { userId },
       create: {
-        sessionId,
+        userId,
         preferences: body.preferences ?? null,
         tools: body.tools ?? null,
         scheduleDraft: body.scheduleDraft ?? null,
@@ -38,10 +38,10 @@ export async function PUT(req: Request) {
       },
     });
 
-    const res = NextResponse.json(profile);
-    if (isNew) applySessionCookie(res, sessionId);
-    return res;
-  } catch {
-    return NextResponse.json({ error: "Failed to save profile" }, { status: 500 });
+    return NextResponse.json(profile);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to save profile";
+    const status = message === "Unauthorized" ? 401 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

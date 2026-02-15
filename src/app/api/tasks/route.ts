@@ -1,29 +1,28 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { applySessionCookie, ensureSession } from "@/lib/session";
+import { ensureUser } from "@/lib/session";
 
 // GET all tasks from MySQL
 export async function GET() {
   try {
-    const { sessionId, isNew } = await ensureSession();
+    const { userId } = await ensureUser();
 
     const tasks = await prisma.task.findMany({
-      where: { sessionId },
+      where: { userId },
       orderBy: { due: "asc" },
     });
 
-    const res = NextResponse.json(tasks);
-    if (isNew) applySessionCookie(res, sessionId);
-    return res;
-  } catch {
-    return NextResponse.json({ error: "Failed to fetch tasks" }, { status: 500 });
+    return NextResponse.json(tasks);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to fetch tasks";
+    return NextResponse.json({ error: message }, { status: 401 });
   }
 }
 
 // POST a new task to MySQL
 export async function POST(req: Request) {
   try {
-    const { sessionId, isNew } = await ensureSession();
+    const { userId } = await ensureUser();
     const body = await req.json();
 
     const newTask = await prisma.task.create({
@@ -33,14 +32,14 @@ export async function POST(req: Request) {
         due: String(body.due || ""),
         priority: String(body.priority || "medium"),
         notes: body.notes ?? null,
-        sessionId,
+        userId,
       },
     });
 
-    const res = NextResponse.json(newTask);
-    if (isNew) applySessionCookie(res, sessionId);
-    return res;
-  } catch {
-    return NextResponse.json({ error: "Failed to create task" }, { status: 500 });
+    return NextResponse.json(newTask);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to create task";
+    const status = message === "Unauthorized" ? 401 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

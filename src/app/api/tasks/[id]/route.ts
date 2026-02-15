@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { applySessionCookie, ensureSession } from "@/lib/session";
+import { ensureUser } from "@/lib/session";
 
 export async function PUT(
   req: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const { sessionId, isNew } = await ensureSession();
+    const { userId } = await ensureUser();
     const body = await req.json();
 
     const data: Record<string, unknown> = {};
@@ -19,7 +19,7 @@ export async function PUT(
     if (body.completed !== undefined) data.completed = Boolean(body.completed);
 
     const updated = await prisma.task.updateMany({
-      where: { id: params.id, sessionId },
+      where: { id: params.id, userId },
       data,
     });
 
@@ -28,14 +28,14 @@ export async function PUT(
     }
 
     const task = await prisma.task.findFirst({
-      where: { id: params.id, sessionId },
+      where: { id: params.id, userId },
     });
 
-    const res = NextResponse.json(task);
-    if (isNew) applySessionCookie(res, sessionId);
-    return res;
-  } catch {
-    return NextResponse.json({ error: "Failed to update task" }, { status: 500 });
+    return NextResponse.json(task);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to update task";
+    const status = message === "Unauthorized" ? 401 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }
 
@@ -44,20 +44,20 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    const { sessionId, isNew } = await ensureSession();
+    const { userId } = await ensureUser();
 
     const removed = await prisma.task.deleteMany({
-      where: { id: params.id, sessionId },
+      where: { id: params.id, userId },
     });
 
     if (removed.count === 0) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const res = NextResponse.json({ ok: true });
-    if (isNew) applySessionCookie(res, sessionId);
-    return res;
-  } catch {
-    return NextResponse.json({ error: "Failed to delete task" }, { status: 500 });
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to delete task";
+    const status = message === "Unauthorized" ? 401 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }

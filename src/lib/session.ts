@@ -1,30 +1,25 @@
-import { cookies } from "next/headers";
-import type { NextResponse } from "next/server";
+import { auth } from "@clerk/nextjs/server";
 import { prisma } from "@/lib/db";
 
-const SESSION_COOKIE = "aurora_session";
+export async function ensureUser() {
+  const { userId: clerkUserId } = await auth();
 
-export async function ensureSession() {
-  const cookieStore = await cookies();
-  const cookie = cookieStore.get(SESSION_COOKIE)?.value;
-
-  if (cookie) {
-    const existing = await prisma.session.findUnique({
-      where: { id: cookie },
-      select: { id: true },
-    });
-    if (existing) return { sessionId: cookie, isNew: false };
+  if (!clerkUserId) {
+    throw new Error("Unauthorized");
   }
 
-  const session = await prisma.session.create({ data: {} });
-  return { sessionId: session.id, isNew: true };
-}
-
-export function applySessionCookie(res: NextResponse, sessionId: string) {
-  res.cookies.set(SESSION_COOKIE, sessionId, {
-    httpOnly: true,
-    sameSite: "lax",
-    secure: process.env.NODE_ENV === "production",
-    path: "/",
+  // Find or create user in our database
+  let user = await prisma.user.findUnique({
+    where: { clerkUserId },
+    select: { id: true },
   });
+
+  if (!user) {
+    user = await prisma.user.create({
+      data: { clerkUserId },
+      select: { id: true },
+    });
+  }
+
+  return { userId: user.id, clerkUserId };
 }

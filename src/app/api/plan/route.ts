@@ -1,40 +1,40 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
-import { applySessionCookie, ensureSession } from "@/lib/session";
+import { ensureUser } from "@/lib/session";
 
 export async function GET() {
   try {
-    const { sessionId, isNew } = await ensureSession();
+    const { userId } = await ensureUser();
 
     const plan = await prisma.plan.findFirst({
-      where: { sessionId },
+      where: { userId },
       orderBy: { createdAt: "desc" },
     });
 
-    const res = NextResponse.json(plan ?? null);
-    if (isNew) applySessionCookie(res, sessionId);
-    return res;
-  } catch {
-    return NextResponse.json({ error: "Failed to load plan" }, { status: 500 });
+    return NextResponse.json(plan ?? null);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to load plan";
+    const status = message === "Unauthorized" ? 401 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }
 
 export async function POST(req: Request) {
   try {
-    const { sessionId, isNew } = await ensureSession();
+    const { userId } = await ensureUser();
     const body = await req.json();
 
     const plan = await prisma.plan.create({
       data: {
-        sessionId,
+        userId,
         content: String(body.content || ""),
       },
     });
 
-    const res = NextResponse.json(plan);
-    if (isNew) applySessionCookie(res, sessionId);
-    return res;
-  } catch {
-    return NextResponse.json({ error: "Failed to save plan" }, { status: 500 });
+    return NextResponse.json(plan);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to save plan";
+    const status = message === "Unauthorized" ? 401 : 500;
+    return NextResponse.json({ error: message }, { status });
   }
 }
