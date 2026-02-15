@@ -90,10 +90,17 @@ export default function DashboardPage() {
     <div className="mx-auto max-w-6xl px-4 py-10 space-y-6">
       {/* Top bar */}
       <div className="flex items-center justify-between">
-        <div>
-          <div className="text-sm font-semibold">Aurora Dashboard</div>
-          <div className="text-xs text-white/50">Signed in • Editable</div>
-        </div>
+        <button onClick={() => router.push("/dashboard")} className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg shadow-blue-500/25">
+            <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+          </div>
+          <div>
+            <div className="text-sm font-bold">Aurora</div>
+            <div className="text-[10px] text-white/50">Dashboard</div>
+          </div>
+        </button>
 
         <div className="flex gap-2">
           <Button variant="ghost" onClick={() => router.push("/generate")}>

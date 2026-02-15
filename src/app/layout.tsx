@@ -76,12 +76,6 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
                   </Link>
                 </SignedOut>
                 <SignedIn>
-                  <Link
-                    href="/generate"
-                    className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-xs font-semibold hover:bg-white/10"
-                  >
-                    Generate
-                  </Link>
                   <UserButton afterSignOutUrl="/" />
                 </SignedIn>
               </div>
