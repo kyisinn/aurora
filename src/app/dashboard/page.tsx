@@ -32,6 +32,14 @@ function tagClass(tag: BlockTag) {
   return `${base} border-white/10 bg-white/5 text-white/70`;
 }
 
+function blockAccentClass(tag: BlockTag) {
+  if (tag === "Deep Work") return "border-violet-400/50 bg-violet-500/10";
+  if (tag === "Class") return "border-sky-400/50 bg-sky-500/10";
+  if (tag === "Break") return "border-emerald-400/50 bg-emerald-500/10";
+  if (tag === "Health") return "border-amber-400/50 bg-amber-500/10";
+  return "border-white/10 bg-white/5";
+}
+
 function normalizeTitle(value: string) {
   return value
     .toLowerCase()
@@ -49,23 +57,49 @@ function normalizePriority(value?: string | null): BlockPriority | null {
   return null;
 }
 
-function priorityBarClass(priority: BlockPriority | null, index: number) {
+function priorityBarClass(
+  priority: BlockPriority | null,
+  index: number,
+  tag?: BlockTag
+) {
+  if (tag === "Break") {
+    return "rounded-2xl px-3 py-2 text-xs font-semibold text-white shadow-lg bg-gradient-to-r from-neutral-700 to-zinc-800";
+  }
   const base = "rounded-2xl px-3 py-2 text-xs font-semibold text-white shadow-lg";
-  if (priority === "High") return `${base} bg-gradient-to-r from-rose-500 to-orange-500`;
-  if (priority === "Medium") return `${base} bg-gradient-to-r from-sky-500 to-indigo-500`;
-  if (priority === "Low") return `${base} bg-gradient-to-r from-emerald-500 to-teal-500`;
+  if (priority === "High") return `${base} bg-gradient-to-r from-[#F97316] to-[#F59E0B]`;
+  if (priority === "Medium") return `${base} bg-gradient-to-r from-[#FBBF24] to-[#F59E0B]`;
+  if (priority === "Low") return `${base} bg-gradient-to-r from-[#10B981] to-[#14B8A6]`;
   return index % 2 === 0
-    ? `${base} bg-gradient-to-r from-slate-500 to-zinc-500`
-    : `${base} bg-gradient-to-r from-neutral-500 to-stone-500`;
+    ? `${base} bg-gradient-to-r from-[#64748B] to-[#475569]`
+    : `${base} bg-gradient-to-r from-[#6366F1] to-[#4F46E5]`;
 }
 
-function priorityCardClass(priority: BlockPriority | null, index: number) {
-  if (priority === "High") return "border-rose-500/30 bg-rose-500/10";
-  if (priority === "Medium") return "border-sky-500/30 bg-sky-500/10";
+function priorityCardClass(
+  priority: BlockPriority | null,
+  index: number,
+  tag?: BlockTag
+) {
+  if (tag === "Break") return "border-white/10 bg-black/30";
+  if (priority === "High") return "border-orange-500/30 bg-orange-500/10";
+  if (priority === "Medium") return "border-yellow-500/30 bg-yellow-500/10";
   if (priority === "Low") return "border-emerald-500/30 bg-emerald-500/10";
   return index % 2 === 0
-    ? "border-white/10 bg-white/5"
-    : "border-white/15 bg-white/10";
+    ? "border-slate-500/30 bg-slate-500/10"
+    : "border-zinc-500/30 bg-zinc-500/10";
+}
+
+function priorityAccentClass(
+  priority: BlockPriority | null,
+  index: number,
+  tag?: BlockTag
+) {
+  if (tag === "Break") return "border-l-4 border-l-neutral-600/70";
+  if (priority === "High") return "border-l-4 border-l-orange-400/80";
+  if (priority === "Medium") return "border-l-4 border-l-yellow-400/80";
+  if (priority === "Low") return "border-l-4 border-l-emerald-400/80";
+  return index % 2 === 0
+    ? "border-l-4 border-l-slate-400/70"
+    : "border-l-4 border-l-indigo-400/70";
 }
 
 function resolveBlockPriority(blockTitle: string, tasks: TaskRow[]) {
@@ -85,15 +119,17 @@ function resolveBlockPriority(blockTitle: string, tasks: TaskRow[]) {
 export default function DashboardPage() {
   const router = useRouter();
   const [blocks, setBlocks] = useState<Block[]>([]);
+  const [selectedBlocks, setSelectedBlocks] = useState<Block[]>([]);
   const [editing, setEditing] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const dayStart = 6 * 60;
   const dayEnd = 22 * 60;
   const daySpan = dayEnd - dayStart;
   const rowCount = 3;
   const timeLabels = ["6am", "8am", "10am", "12pm", "2pm", "4pm", "6pm", "8pm", "10pm"];
 
-  // 🔐 auth guard
+  // 🔐 auth guard & Data Fetching (today's schedule)
   useEffect(() => {
     const authed = localStorage.getItem(LS_AUTH) === "true";
     if (!authed) {
@@ -105,14 +141,19 @@ export default function DashboardPage() {
 
     async function loadSchedule() {
       try {
+        const dateStr = formatDate(new Date());
+
         const [scheduleRes, tasksRes] = await Promise.all([
-          fetch("/api/schedule"),
+          fetch(`/api/schedule?date=${dateStr}`),
           fetch("/api/tasks"),
         ]);
         if (!scheduleRes.ok || !active) return;
 
         const data = await scheduleRes.json();
-        if (!data?.blocks || !active) return;
+        if (!data?.blocks || !active) {
+          if (active) setBlocks([]);
+          return;
+        }
 
         const tasks: TaskRow[] = tasksRes.ok ? await tasksRes.json() : [];
         const parsed = (data.blocks as Block[]).map((block) => ({
@@ -132,6 +173,45 @@ export default function DashboardPage() {
       active = false;
     };
   }, [router]);
+
+  // Calendar schedule (selected date)
+  useEffect(() => {
+    let active = true;
+
+    async function loadSelectedSchedule() {
+      try {
+        const dateStr = formatDate(selectedDate);
+
+        const [scheduleRes, tasksRes] = await Promise.all([
+          fetch(`/api/schedule?date=${dateStr}`),
+          fetch("/api/tasks"),
+        ]);
+        if (!scheduleRes.ok || !active) return;
+
+        const data = await scheduleRes.json();
+        if (!data?.blocks || !active) {
+          if (active) setSelectedBlocks([]);
+          return;
+        }
+
+        const tasks: TaskRow[] = tasksRes.ok ? await tasksRes.json() : [];
+        const parsed = (data.blocks as Block[]).map((block) => ({
+          ...block,
+          priority: resolveBlockPriority(block.title, tasks),
+        }));
+
+        parsed.sort((a, b) => toMin(a.start) - toMin(b.start));
+        setSelectedBlocks(parsed);
+      } catch {
+        // ignore
+      }
+    }
+
+    loadSelectedSchedule();
+    return () => {
+      active = false;
+    };
+  }, [selectedDate]);
 
   const deepCount = useMemo(
     () => blocks.filter((b) => b.tag === "Deep Work").length,
@@ -189,6 +269,46 @@ export default function DashboardPage() {
     });
   }
 
+  // Calendar helpers
+  function getDaysInMonth(d: Date) {
+    return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
+  }
+
+  function getFirstDayOfMonth(d: Date) {
+    return new Date(d.getFullYear(), d.getMonth(), 1).getDay();
+  }
+
+  function isSameDay(d1: Date, d2: Date) {
+    return (
+      d1.getFullYear() === d2.getFullYear() &&
+      d1.getMonth() === d2.getMonth() &&
+      d1.getDate() === d2.getDate()
+    );
+  }
+
+  function isPast(d: Date) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return d < today;
+  }
+
+  function formatDate(d: Date) {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  const today = new Date();
+  const daysInMonth = getDaysInMonth(selectedDate);
+  const firstDay = getFirstDayOfMonth(selectedDate);
+  const calendarDays = [];
+  for (let i = 0; i < firstDay; i++) calendarDays.push(null);
+  for (let day = 1; day <= daysInMonth; day++) {
+    const date = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), day);
+    calendarDays.push(date);
+  }
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 space-y-6">
       {/* KPI row */}
@@ -215,22 +335,26 @@ export default function DashboardPage() {
       {/* Schedule */}
       <Card>
         <div className="flex items-center justify-between">
-          <button
-            onClick={() => router.push("/dashboard-preview")}
-            className="group flex items-center gap-3 rounded-xl px-2 py-1 transition-colors hover:bg-white hover:text-black"
-          >
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg shadow-blue-500/25 transition-transform group-hover:scale-105">
-              <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
-              </svg>
-            </div>
-            <div>
-              <div className="text-sm font-bold group-hover:text-black">Preview Today's</div>
-            </div>
-          </button>
+          <div className="flex flex-col gap-3">
+            <button
+              onClick={() => router.push(`/dashboard-preview?date=${formatDate(selectedDate)}`)}
+              className="group flex items-center gap-3 rounded-xl px-2 py-1 transition-colors hover:bg-white hover:text-black"
+            >
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 shadow-lg shadow-blue-500/25 transition-transform group-hover:scale-105">
+                <svg className="h-5 w-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+              </div>
+              <div>
+                <div className="text-sm font-bold group-hover:text-black">
+                  {isSameDay(selectedDate, new Date()) ? "Preview Today's" : "Preview Selected"}
+                </div>
+              </div>
+            </button>
+          </div>
           <div className="flex gap-2">
             <Button
-              onClick={() => router.push("/get-started")}
+              onClick={() => router.push(`/get-started?date=${formatDate(selectedDate)}`)}
               className="w-auto bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 shadow-lg shadow-blue-500/25"
             >
               Regenerate
@@ -258,7 +382,7 @@ export default function DashboardPage() {
             </div>
 
             {blocks.map((b, idx) => {
-              const priority = b.priority ?? "Medium";
+              const priority = b.priority ?? null;
               const start = Math.max(toMin(b.start), dayStart);
               const end = Math.min(toMin(b.end), dayEnd);
               const left = ((start - dayStart) / daySpan) * 100;
@@ -269,7 +393,7 @@ export default function DashboardPage() {
               return (
                 <div
                   key={`${b.title}-${idx}`}
-                  className={`absolute ${priorityBarClass(priority)} shadow-black/30`}
+                  className={`absolute ${priorityBarClass(priority, idx, b.tag)} shadow-black/30`}
                   style={{ left: `${left}%`, width: `${width}%`, top }}
                 >
                   <div className="truncate text-[11px]">{b.title}</div>
@@ -289,7 +413,12 @@ export default function DashboardPage() {
                 key={idx}
                 className={`rounded-3xl border p-4 ${priorityCardClass(
                   b.priority ?? null,
-                  idx
+                  idx,
+                  b.tag
+                )} ${priorityAccentClass(
+                  b.priority ?? null,
+                  idx,
+                  b.tag
                 )} ${
                   editing ? "ring-1 ring-violet-500/40" : ""
                 }`}
@@ -354,7 +483,7 @@ export default function DashboardPage() {
         <div className="mt-4 flex justify-center">
           <button
             onClick={() => setDetailsOpen((prev) => !prev)}
-            className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs text-white/70 transition hover:bg-white/10"
+            className="flex items-center gap-2 rounded-full border border-white/10 bg-white/5 px-4 py-1.5 text-xs text-white/70 transition hover:bg-white hover:text-black"
           >
             <span>{detailsOpen ? "Hide details" : "Show details"}</span>
             <svg
@@ -370,6 +499,81 @@ export default function DashboardPage() {
               />
             </svg>
           </button>
+        </div>
+      </Card>
+
+      {/* Calendar */}
+      <Card className="!border-purple-400/40 !bg-gradient-to-br !from-purple-500/10 !via-black/30 !to-indigo-500/10">
+        <div className="flex items-center justify-center gap-8">
+          <div className="rounded-3xl border border-purple-400/30 bg-gradient-to-br from-purple-500/10 to-black/40 p-6 backdrop-blur-sm">
+            <div className="mb-4 text-sm font-semibold bg-gradient-to-r from-purple-200 to-indigo-200 bg-clip-text text-transparent">This Month's Plans</div>
+            <div className="grid grid-cols-7 gap-3 w-fit">
+              {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
+                <div key={d} className="text-center text-[10px] font-bold text-purple-300/70 w-8">
+                  {d}
+                </div>
+              ))}
+              {calendarDays.map((date, i) => {
+                const isToday = date && isSameDay(date, today);
+                const isPastDate = date && isPast(date);
+                const isSelected = date && isSameDay(date, selectedDate);
+                return (
+                  <button
+                    key={i}
+                    disabled={isPastDate}
+                    onClick={() => date && setSelectedDate(date)}
+                    className={`rounded-lg p-2 text-xs font-semibold transition-all duration-200 w-8 h-8 ${
+                      !date
+                        ? ""
+                        : isPastDate
+                          ? "cursor-not-allowed text-white/20 opacity-40"
+                          : isToday
+                            ? "border border-blue-400/80 bg-blue-500/25 text-blue-200 hover:bg-blue-500/40 hover:scale-110 shadow-lg shadow-blue-500/20"
+                            : isSelected
+                              ? "border border-purple-400/80 bg-purple-500/30 text-purple-100 hover:bg-purple-500/45 hover:scale-110 shadow-lg shadow-purple-500/25"
+                              : "text-white/50 hover:bg-white/10 hover:scale-105"
+                    }`}
+                  >
+                    {date?.getDate()}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="flex flex-col items-center gap-3 h-full">
+            <div className="rounded-3xl border border-purple-400/40 bg-gradient-to-br from-indigo-500/10 to-black/40 p-4 w-52 max-h-60 overflow-y-auto backdrop-blur-sm flex flex-col flex-1">
+              <div className="text-xs font-semibold text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 to-purple-300 mb-3">
+                {selectedDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+              </div>
+              {selectedBlocks.length > 0 ? (
+                <div className="space-y-2">
+                  {selectedBlocks.map((b, idx) => (
+                    <div
+                      key={idx}
+                      className={`text-[10px] border-l-2 pl-2 rounded px-2 py-1 transition-all ${blockAccentClass(
+                        b.tag
+                      )}`}
+                    >
+                      <div className="font-semibold text-white/90 truncate">{b.title}</div>
+                      <div className="text-white/50">{b.start} – {b.end}</div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-[10px] text-white/50">No blocks scheduled</div>
+              )}
+            </div>
+            <Button
+              onClick={() => {
+                const dateParam = formatDate(selectedDate);
+                const target = selectedBlocks.length > 0 ? "/dashboard-preview" : "/get-started";
+                router.push(`${target}?date=${dateParam}`);
+              }}
+              className="px-4 py-1.5 text-xs bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 shadow-lg shadow-purple-500/25 hover:scale-105 transition-transform duration-200"
+            >
+              {selectedBlocks.length > 0 ? "Edit Plan" : "Make Plans"}
+            </Button>
+          </div>
         </div>
       </Card>
     </div>

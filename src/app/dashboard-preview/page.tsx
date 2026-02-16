@@ -347,12 +347,7 @@ export default function DashboardPreviewPage() {
           </button>
 
           <div className="flex items-center gap-3">
-            <button
-              onClick={() => router.push( "/tasks")}
-              className="text-sm text-white/70 hover:text-white transition px-4 py-2"
-            >
-              Edit setup
-            </button>
+
             <button
               onClick={() => router.push(hasGenerated ? "/generate" : "/get-started")}
               className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl shadow-lg shadow-blue-500/25"

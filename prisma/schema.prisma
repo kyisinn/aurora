@@ -1,9 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
-// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -30,11 +27,14 @@ model Task {
   id        String   @id @default(uuid())
   title     String
   minutes   Int
-  due       String
-  priority  String
+  due       String?
+  priority  String   @default("medium")
   notes     String?  @db.Text
   completed Boolean  @default(false)
   createdAt DateTime @default(now())
+
+  // ✅ When you plan to DO it
+  scheduledDate String?
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -55,9 +55,19 @@ model Schedule {
   blocks     Json
   userPrompt String?  @db.Text
   createdAt  DateTime @default(now())
+  
+  // ✅ FIXED: Added @default(now()) so existing rows can migrate
+  updatedAt  DateTime @default(now()) @updatedAt
+
+  // ✅ The specific date this plan is for
+  // Note: If you have existing data, they will all default to this date.
+  date String   @default("2026-02-16")
 
   userId String
   user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // ✅ PREVENT DUPLICATES: Only one schedule per user per day
+  @@unique([userId, date])
 }
 
 model Plan {

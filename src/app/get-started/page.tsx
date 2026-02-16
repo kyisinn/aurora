@@ -73,7 +73,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 type TimePreference = "morning" | "afternoon" | "evening";
 type Intensity = "light" | "balanced" | "intense";
@@ -132,6 +132,30 @@ function formatTime(minutes: number) {
   const h = Math.floor(minutes / 60) % 24;
   const m = minutes % 60;
   return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+}
+
+function toLocalIsoDate(d = new Date()) {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatOrdinal(n: number) {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return `${n}st`;
+  if (mod10 === 2 && mod100 !== 12) return `${n}nd`;
+  if (mod10 === 3 && mod100 !== 13) return `${n}rd`;
+  return `${n}th`;
+}
+
+function formatDisplayDate(dateString: string) {
+  const [year, month, day] = dateString.split("-").map(Number);
+  if (!year || !month || !day) return dateString;
+  const date = new Date(year, month - 1, day);
+  const monthLabel = new Intl.DateTimeFormat("en-US", { month: "short" }).format(date);
+  return `${monthLabel} ${formatOrdinal(day)}`;
 }
 
 function generateDayPreview(
@@ -255,6 +279,9 @@ function PreviewTimeline({
 
 export default function GetStartedPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const selectedDate = searchParams.get("date");
+  const todayIso = useMemo(() => toLocalIsoDate(), []);
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
@@ -343,6 +370,7 @@ export default function GetStartedPage() {
           body: JSON.stringify({
             blocks: scheduleBlocks,
             userPrompt: null,
+            date: selectedDate ?? undefined,
           }),
         }),
       ]);
@@ -364,7 +392,8 @@ export default function GetStartedPage() {
 
     async function loadSchedulePreview() {
       try {
-        const res = await fetch("/api/schedule");
+        const query = selectedDate ? `?date=${encodeURIComponent(selectedDate)}` : "";
+        const res = await fetch(`/api/schedule${query}`);
         if (!res.ok) return;
         const data = await res.json();
         const blocks = data?.blocks;
@@ -388,7 +417,7 @@ export default function GetStartedPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [selectedDate]);
 
   useEffect(() => {
     const payload: SetupPayload = { preference, intensity, focusHours, tasks, preview };
@@ -724,7 +753,11 @@ export default function GetStartedPage() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <div className="text-sm text-white/60">Live preview</div>
-                  <div className="text-lg font-bold">Today’s schedule</div>
+                  <div className="text-lg font-bold">
+                    {selectedDate && selectedDate !== todayIso
+                      ? formatDisplayDate(selectedDate)
+                      : "Today’s schedule"}
+                  </div>
                 </div>
                 <div className="text-xs text-white/50">
                   {preference} • {intensity} • {focusHours}h

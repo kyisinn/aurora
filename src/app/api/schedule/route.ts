@@ -2,20 +2,28 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
 import { ensureUser } from "@/lib/session";
 
-export async function GET() {
+export async function GET(req: Request) {
   try {
     const { userId } = await ensureUser();
+    
+    // 1. Get the date from the URL (e.g., ?date=2026-02-17)
+    const { searchParams } = new URL(req.url);
+    const date = searchParams.get("date") || new Date().toISOString().split("T")[0]; // Default to today
 
-    const schedule = await prisma.schedule.findFirst({
-      where: { userId },
-      orderBy: { createdAt: "desc" },
+    // 2. Find the schedule SPECIFICALLY for that date
+    const schedule = await prisma.schedule.findUnique({
+      where: {
+        userId_date: { // This uses the @@unique constraint you just added
+          userId,
+          date,
+        },
+      },
     });
 
-    return NextResponse.json(schedule ?? null);
+    // 3. Return empty list if no schedule exists for that day
+    return NextResponse.json(schedule || { blocks: [] });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to load schedule";
-    const status = message === "Unauthorized" ? 401 : 500;
-    return NextResponse.json({ error: message }, { status });
+    return NextResponse.json({ error: "Failed to fetch schedule" }, { status: 500 });
   }
 }
 
@@ -24,9 +32,19 @@ export async function POST(req: Request) {
     const { userId } = await ensureUser();
     const body = await req.json();
 
-    const schedule = await prisma.schedule.create({
-      data: {
+    const date = body?.date || new Date().toISOString().split("T")[0];
+
+    const schedule = await prisma.schedule.upsert({
+      where: {
+        userId_date: { userId, date },
+      },
+      update: {
+        blocks: body.blocks ?? [],
+        userPrompt: body.userPrompt ?? null,
+      },
+      create: {
         userId,
+        date,
         blocks: body.blocks ?? [],
         userPrompt: body.userPrompt ?? null,
       },

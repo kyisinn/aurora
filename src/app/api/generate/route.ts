@@ -47,13 +47,18 @@ export async function POST(req: Request) {
     const { userId } = await ensureUser();
     const promptValue = parsed.data.userPrompt?.trim() || null;
     const preferenceWindow = parsed.data.preferences?.timePreference ?? null;
+    
+    // 1. Get the date from the frontend request body
+    const date = parsed.data.userPrompt && /\d{4}-\d{2}-\d{2}/.test(parsed.data.userPrompt)
+      ? parsed.data.userPrompt.match(/\d{4}-\d{2}-\d{2}/)![0]
+      : (body.date || new Date().toISOString().split("T")[0]);
 
     const newTasks = parsed.data.tasks
       .filter((task) => !task.id)
       .map((task) => ({
         title: task.title,
         minutes: task.minutes,
-        due: task.due || new Date().toISOString().split("T")[0],
+        due: task.due || date,
         priority: task.priority || "medium",
         userId,
       }));
@@ -100,11 +105,20 @@ export async function POST(req: Request) {
       `,
     });
 
-       const [, aiResult] = await Promise.all([dbPromise, generatePromise]);
+    const [, aiResult] = await Promise.all([dbPromise, generatePromise]);
 
-    const saved = await prisma.schedule.create({
-      data: {
+    // 2. Save using 'upsert' (Update if exists, Create if new)
+    const saved = await prisma.schedule.upsert({
+      where: {
+        userId_date: { userId, date }, // Check if THIS user has a plan for THIS date
+      },
+      update: {
+        blocks: aiResult.object.schedule, // If yes, overwrite it
+        userPrompt: promptValue,
+      },
+      create: {
         userId,
+        date, // If no, create a new row for this date
         blocks: aiResult.object.schedule,
         userPrompt: promptValue,
       },
