@@ -48,24 +48,22 @@ export async function POST(req: Request) {
     const promptValue = parsed.data.userPrompt?.trim() || null;
     const preferenceWindow = parsed.data.preferences?.timePreference ?? null;
 
-    // Save tasks (upsert logic)
-    await Promise.all(
-      parsed.data.tasks.map((task) => {
-        if (task.id) return Promise.resolve(); // Skip if exists
-        return prisma.task.create({
-          data: {
-            title: task.title,
-            minutes: task.minutes,
-            due: task.due || new Date().toISOString().split("T")[0],
-            priority: task.priority || "medium",
-            userId,
-          },
-        });
-      })
-    );
+    const newTasks = parsed.data.tasks
+      .filter((task) => !task.id)
+      .map((task) => ({
+        title: task.title,
+        minutes: task.minutes,
+        due: task.due || new Date().toISOString().split("T")[0],
+        priority: task.priority || "medium",
+        userId,
+      }));
 
-    const { object } = await generateObject({
-      model: openai("gpt-4o"),
+    const dbPromise = newTasks.length > 0
+      ? prisma.task.createMany({ data: newTasks })
+      : Promise.resolve();
+
+    const generatePromise = generateObject({
+      model: openai("gpt-4.1-mini"),
       schema: ScheduleSchema,
       prompt: `
         You are an elite productivity scheduler.
@@ -94,16 +92,20 @@ export async function POST(req: Request) {
            - **Heavy Workload**: If tasks are heavy, group Deep Work together and use short 10-15m "Break" blocks between them.
            - **Gap Strategy**: Leave blank time naturally in the schedule—do NOT create filler "Break", "Leisure", or "Admin" blocks just to fill gaps. Only create explicit blocks for user-input tasks and necessary short breaks between Deep Work.
 
-        3. **Standard Constraints**:
-           - Group deep work tasks together when possible.
-           - Respect task durations but split if >90 mins.
+          3. **Standard Constraints**:
+            - Group deep work tasks together when possible.
+            - Respect task durations but split if >90 mins.
+          4. **Reasoning**:
+            - Keep reasoning under 10 words.
       `,
     });
+
+       const [, aiResult] = await Promise.all([dbPromise, generatePromise]);
 
     const saved = await prisma.schedule.create({
       data: {
         userId,
-        blocks: object.schedule,
+        blocks: aiResult.object.schedule,
         userPrompt: promptValue,
       },
     });
