@@ -124,10 +124,26 @@ export default function DashboardPage() {
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
   const dayStart = 6 * 60;
-  const dayEnd = 22 * 60;
-  const daySpan = dayEnd - dayStart;
+  const baseDayEnd = 22 * 60;
+  const baseDaySpan = baseDayEnd - dayStart;
   const rowCount = 3;
-  const timeLabels = ["6am", "8am", "10am", "12pm", "2pm", "4pm", "6pm", "8pm", "10pm"];
+  const maxBlockEnd = useMemo(() => {
+    if (blocks.length === 0) return baseDayEnd;
+    return Math.max(...blocks.map((b) => toMin(b.end)));
+  }, [blocks, baseDayEnd]);
+  const dayEnd = Math.max(baseDayEnd, maxBlockEnd);
+  const daySpan = dayEnd - dayStart;
+  const spanRatio = Math.max(1, daySpan / baseDaySpan);
+  const timeLabels = useMemo(() => {
+    const labels: string[] = [];
+    for (let t = dayStart; t <= dayEnd; t += 120) {
+      const hour24 = Math.floor(t / 60) % 24;
+      const suffix = hour24 >= 12 ? "pm" : "am";
+      const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+      labels.push(`${hour12}${suffix}`);
+    }
+    return labels;
+  }, [dayStart, dayEnd]);
 
   // 🔐 auth guard & Data Fetching (today's schedule)
   useEffect(() => {
@@ -368,41 +384,48 @@ export default function DashboardPage() {
         </div>
 
         <div className="mt-4">
-          <div className="flex justify-between text-[10px] text-white/50">
-            {timeLabels.map((label) => (
-              <span key={label}>{label}</span>
-            ))}
-          </div>
+          <div className="overflow-x-auto rounded-3xl border border-white/10 bg-black/30">
+            <div
+              className="min-w-full"
+              style={{ width: `${spanRatio * 100}%` }}
+            >
+              <div className="flex justify-between px-3 pt-3 text-[10px] text-white/50">
+                {timeLabels.map((label, index) => (
+                  <span key={`${label}-${index}`}>{label}</span>
+                ))}
+              </div>
 
-          <div className="relative mt-2 h-40 rounded-3xl border border-white/10 bg-black/30">
-            <div className="pointer-events-none absolute inset-0 grid grid-cols-8">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <div key={i} className="border-l border-white/10" />
-              ))}
-            </div>
-
-            {blocks.map((b, idx) => {
-              const priority = b.priority ?? null;
-              const start = Math.max(toMin(b.start), dayStart);
-              const end = Math.min(toMin(b.end), dayEnd);
-              const left = ((start - dayStart) / daySpan) * 100;
-              const width = Math.max(((end - start) / daySpan) * 100, 6);
-              const row = idx % rowCount;
-              const top = 10 + row * 42;
-
-              return (
-                <div
-                  key={`${b.title}-${idx}`}
-                  className={`absolute ${priorityBarClass(priority, idx, b.tag)} shadow-black/30`}
-                  style={{ left: `${left}%`, width: `${width}%`, top }}
-                >
-                  <div className="truncate text-[11px]">{b.title}</div>
-                  <div className="text-[10px] text-white/80">
-                    {b.start} - {b.end}
-                  </div>
+              <div className="relative mt-2 h-40">
+                <div className="pointer-events-none absolute inset-0 grid grid-cols-8">
+                  {Array.from({ length: 8 }).map((_, i) => (
+                    <div key={i} className="border-l border-white/10" />
+                  ))}
                 </div>
-              );
-            })}
+
+                {blocks.map((b, idx) => {
+                  const priority = b.priority ?? null;
+                  const start = Math.max(toMin(b.start), dayStart);
+                  const end = Math.min(toMin(b.end), dayEnd);
+                  const left = ((start - dayStart) / daySpan) * 100;
+                  const width = Math.max(((end - start) / daySpan) * 100, 6);
+                  const row = idx % rowCount;
+                  const top = 10 + row * 42;
+
+                  return (
+                    <div
+                      key={`${b.title}-${idx}`}
+                      className={`absolute ${priorityBarClass(priority, idx, b.tag)} shadow-black/30`}
+                      style={{ left: `${left}%`, width: `${width}%`, top }}
+                    >
+                      <div className="truncate text-[11px]">{b.title}</div>
+                      <div className="text-[10px] text-white/80">
+                        {b.start} - {b.end}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </div>
         </div>
 
