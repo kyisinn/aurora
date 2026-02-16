@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 
 type TimePreference = "morning" | "afternoon" | "evening";
 type Intensity = "light" | "balanced" | "intense";
@@ -33,6 +33,20 @@ function parseTime(t: string) {
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
+}
+
+function toLocalIsoDate(d = new Date()) {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatDisplayDate(dateString: string) {
+  const [year, month, day] = dateString.split("-").map(Number);
+  if (!year || !month || !day) return dateString;
+  const date = new Date(year, month - 1, day);
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 // (Same logic style as get-started) generate schedule for dashboard if preview not saved
@@ -213,6 +227,9 @@ function normalizeTasks(data: unknown): TaskInput[] {
 
 export default function DashboardPreviewPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const selectedDate = searchParams.get("date");
+  const effectiveDate = selectedDate ?? toLocalIsoDate();
   const [setup, setSetup] = useState<SetupPayload | null>(null);
   const [schedule, setSchedule] = useState<ScheduleRecord | null>(null);
   const [apiTasks, setApiTasks] = useState<TaskInput[]>([]);
@@ -223,7 +240,7 @@ export default function DashboardPreviewPage() {
 
     async function load() {
       try {
-        const res = await fetch("/api/schedule");
+        const res = await fetch(`/api/schedule?date=${encodeURIComponent(effectiveDate)}`);
         if (res.ok) {
           const data = await res.json();
           if (active && data?.blocks) setSchedule(data);
@@ -254,7 +271,7 @@ export default function DashboardPreviewPage() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [effectiveDate]);
 
   useEffect(() => {
     if (!isFullscreen) return;
@@ -316,7 +333,7 @@ export default function DashboardPreviewPage() {
               Please complete the Get Started flow first.
             </div>
             <button
-              onClick={() => router.push(hasGenerated ? "/generate" : "/get-started")}
+              onClick={() => router.push(`${hasGenerated ? "/generate" : "/get-started"}?date=${encodeURIComponent(effectiveDate)}`)}
               className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 px-7 py-3 rounded-xl font-semibold shadow-lg shadow-blue-500/25"
             >
               Go to Get Started
@@ -349,7 +366,7 @@ export default function DashboardPreviewPage() {
           <div className="flex items-center gap-3">
 
             <button
-              onClick={() => router.push(hasGenerated ? "/generate" : "/get-started")}
+              onClick={() => router.push(`${hasGenerated ? "/generate" : "/get-started"}?date=${encodeURIComponent(effectiveDate)}`)}
               className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl shadow-lg shadow-blue-500/25"
             >
               Regenerate
@@ -362,7 +379,9 @@ export default function DashboardPreviewPage() {
         {/* Header */}
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
           <div className="space-y-2">
-            <h1 className="text-4xl font-bold tracking-tight">Your schedule today</h1>
+            <h1 className="text-4xl font-bold tracking-tight">
+              {selectedDate ? `Your schedule for ${formatDisplayDate(effectiveDate)}` : "Your schedule today"}
+            </h1>
             <div className="flex flex-wrap gap-2">
               {setup ? (
                 <>
@@ -425,7 +444,7 @@ export default function DashboardPreviewPage() {
                 <div className="text-lg font-bold">Live preview</div>
               </div>
               <div className="flex items-center gap-3 text-xs text-white/50">
-                <span>Today • Auto-generated</span>
+                <span>{selectedDate ? `${formatDisplayDate(effectiveDate)} • Auto-generated` : "Today • Auto-generated"}</span>
                 <button
                   onClick={() => setIsFullscreen(true)}
                   className="rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-xs text-white/70 transition"
@@ -501,7 +520,9 @@ export default function DashboardPreviewPage() {
                 <div className="text-lg font-bold">Live preview</div>
               </div>
               <div className="flex items-center gap-3">
-                <div className="text-xs text-white/50">Today • Auto-generated</div>
+                <div className="text-xs text-white/50">
+                  {selectedDate ? `${formatDisplayDate(effectiveDate)} • Auto-generated` : "Today • Auto-generated"}
+                </div>
                 <button
                   onClick={() => setIsFullscreen(false)}
                   className="rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-xs text-white/70 transition"

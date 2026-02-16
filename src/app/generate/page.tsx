@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Card } from "@/component/card";
 import { Button } from "@/component/button";
 
@@ -37,6 +37,9 @@ type ProfileResponse = {
 
 export default function GeneratePage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const selectedDate = searchParams.get("date");
+  const effectiveDate = selectedDate ?? new Date().toISOString().split("T")[0];
 
   const [timePreference, setTimePreference] = useState<TimePreference | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -73,9 +76,11 @@ export default function GeneratePage() {
       }
 
       try {
+        const scheduleQuery = `?date=${encodeURIComponent(effectiveDate)}`;
+
         const [tasksRes, scheduleRes, profileRes] = await Promise.all([
           fetch("/api/tasks"),
-          fetch("/api/schedule"),
+          fetch(`/api/schedule${scheduleQuery}`),
           fetch("/api/profile"),
         ]);
 
@@ -131,7 +136,7 @@ export default function GeneratePage() {
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, []);
+  }, [effectiveDate]);
 
   /* AI-style summary prompt (preview only) */
   const autoPrompt = useMemo(() => {
@@ -145,6 +150,8 @@ export default function GeneratePage() {
 
     return `User request:
 ${userPrompt || "(none)"}
+
+  Date: ${effectiveDate}
 
 ${preferenceLine}
 
@@ -173,6 +180,7 @@ Rules:
           tasks,
           userPrompt,
           preferences: timePreference ? { timePreference } : undefined,
+          date: effectiveDate,
         }),
       });
 
@@ -182,7 +190,7 @@ Rules:
       }
 
       // Success! The backend has already saved the schedule.
-      router.push("/dashboard-preview");
+      router.push(`/dashboard-preview?date=${encodeURIComponent(effectiveDate)}`);
     } catch (err) {
       console.error("Failed to generate schedule", err);
       alert("Failed to generate schedule. Please try again.");
