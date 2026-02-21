@@ -538,7 +538,7 @@ export default function DashboardPage() {
               ))}
               {calendarDays.map((date, i) => {
                 const isToday = date && isSameDay(date, today);
-                const isPastDate = date && isPast(date);
+                const isPastDate = !!date && isPast(date);
                 const isSelected = date && isSameDay(date, selectedDate);
                 return (
                   <button
