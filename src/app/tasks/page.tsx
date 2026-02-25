@@ -14,7 +14,15 @@ type Task = {
   due: string; // YYYY-MM-DD
   priority: Priority;
   notes?: string;
+  completed?: boolean;
 };
+
+function pointsForTask(task: Pick<Task, "minutes" | "priority">) {
+  const base = Math.max(10, Math.round(task.minutes / 5));
+  const multiplier =
+    task.priority === "high" ? 1.5 : task.priority === "medium" ? 1.2 : 1;
+  return Math.round(base * multiplier);
+}
 
 function todayISO() {
   const d = new Date();
@@ -109,7 +117,9 @@ export default function TasksPage() {
     const totalMin = tasks.reduce((s, t) => s + (Number(t.minutes) || 0), 0);
     const high = tasks.filter((t) => t.priority === "high").length;
     const dueSoon = [...tasks].sort((a, b) => a.due.localeCompare(b.due)).slice(0, 3);
-    return { totalMin, high, dueSoon };
+    const completed = tasks.filter((t) => Boolean(t.completed));
+    const points = completed.reduce((sum, task) => sum + pointsForTask(task), 0);
+    return { totalMin, high, dueSoon, completedCount: completed.length, points };
   }, [tasks]);
 
   function resetForm() {
@@ -209,6 +219,27 @@ export default function TasksPage() {
     }
   }
 
+  async function toggleComplete(task: Task) {
+    setActionError(null);
+    try {
+      const nextCompleted = !Boolean(task.completed);
+      const response = await fetch(`/api/tasks/${task.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed: nextCompleted }),
+      });
+      if (!response.ok) throw new Error("Failed to update completion");
+
+      const updated = await response.json();
+      setTasks((prev) =>
+        prev.map((t) => (t.id === task.id ? { ...t, ...updated, id: String(updated.id ?? t.id) } : t))
+      );
+    } catch (error) {
+      console.error("Error updating completion:", error);
+      setActionError("Failed to update task completion.");
+    }
+  }
+
   async function seedExamples() {
     const examples = [
       { title: "Finish assignment draft", minutes: 120, due: todayISO(), priority: "high" as Priority },
@@ -251,6 +282,9 @@ export default function TasksPage() {
           <Button variant="ghost" onClick={() => router.push("/dashboard-preview")}>
             Preview
           </Button>
+          <Button variant="ghost" onClick={() => router.push("/achievements")}>
+            Achievements
+          </Button>
           <Button variant="ghost" onClick={() => router.push("/dashboard")}>
             Dashboard
           </Button>
@@ -273,9 +307,9 @@ export default function TasksPage() {
         </Card>
 
         <Card>
-          <div className="text-xs text-white/60">High priority</div>
-          <div className="mt-1 text-2xl font-bold">{stats.high}</div>
-          <div className="mt-1 text-sm text-white/60">urgent items</div>
+          <div className="text-xs text-white/60">Achievement points</div>
+          <div className="mt-1 text-2xl font-bold">{stats.points} XP</div>
+          <div className="mt-1 text-sm text-white/60">{stats.completedCount} tasks completed</div>
         </Card>
       </div>
 
@@ -424,7 +458,11 @@ export default function TasksPage() {
                   .map((t) => (
                     <div
                       key={t.id}
-                      className="rounded-3xl border border-white/10 bg-black/20 p-4"
+                      className={`rounded-3xl border p-4 ${
+                        t.completed
+                          ? "border-emerald-500/30 bg-emerald-500/10"
+                          : "border-white/10 bg-black/20"
+                      }`}
                     >
                       <div className="flex items-start justify-between gap-3">
                         <button
@@ -432,10 +470,15 @@ export default function TasksPage() {
                           onClick={() => startEdit(t)}
                           className="min-w-0 text-left"
                         >
-                          <div className="text-sm font-semibold truncate">{t.title}</div>
+                          <div className={`text-sm font-semibold truncate ${t.completed ? "line-through text-white/65" : ""}`}>
+                            {t.title}
+                          </div>
                           <div className="mt-1 text-xs text-white/60">
                             {t.minutes} min • due {t.due}
                           </div>
+                          {t.completed ? (
+                            <div className="mt-1 text-xs text-emerald-300">+{pointsForTask(t)} XP earned</div>
+                          ) : null}
                           {t.notes ? (
                             <div className="mt-1 text-xs text-white/45 line-clamp-2">
                               {t.notes}
@@ -447,6 +490,17 @@ export default function TasksPage() {
                           <span className={priorityBadge(t.priority)}>
                             {t.priority.toUpperCase()}
                           </span>
+                          <button
+                            type="button"
+                            onClick={() => toggleComplete(t)}
+                            className={`rounded-2xl px-3 py-2 text-xs font-semibold border transition ${
+                              t.completed
+                                ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-200"
+                                : "border-white/10 bg-white/5 hover:bg-white/10"
+                            }`}
+                          >
+                            {t.completed ? "Completed" : "Mark done"}
+                          </button>
                           <button
                             type="button"
                             onClick={() => remove(t.id)}

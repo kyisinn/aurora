@@ -93,30 +93,40 @@ function TimelineView({ tasks }: { tasks: Task[] }) {
     return h * 60 + m;
   };
 
-  const minTime = Math.min(...tasks.map((t) => parseTime(t.start)));
-  const maxTime = Math.max(...tasks.map((t) => parseTime(t.end)));
+  const minTime = tasks.length ? Math.min(...tasks.map((t) => parseTime(t.start))) : 8 * 60;
+  const maxTime = tasks.length ? Math.max(...tasks.map((t) => parseTime(t.end))) : 18 * 60;
   const totalMinutes = Math.max(1, maxTime - minTime);
 
+  if (!tasks.length) {
+    return (
+      <div className="relative h-[560px] rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-white/10 overflow-hidden">
+        <div className="absolute inset-0 grid place-items-center">
+          <div className="text-base text-white/60">No schedule blocks yet</div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="relative h-[500px] rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-white/10 overflow-hidden">
+    <div className="relative h-[560px] rounded-2xl bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border border-white/10 overflow-hidden">
       {/* Background grid */}
-      <div className="absolute inset-0 opacity-20">
-        {Array.from({ length: 12 }).map((_, i) => (
+      <div className="absolute inset-0 opacity-25">
+        {Array.from({ length: 14 }).map((_, i) => (
           <div
             key={i}
             className="absolute w-full border-t border-white/10"
-            style={{ top: `${(i / 12) * 100}%` }}
+            style={{ top: `${(i / 14) * 100}%` }}
           />
         ))}
       </div>
 
       {/* Time labels */}
       <div className="absolute left-0 top-0 bottom-0 w-16 bg-gradient-to-r from-slate-900/90 to-transparent border-r border-white/5 flex flex-col justify-between py-4 px-2">
-        {Array.from({ length: 8 }).map((_, i) => {
-          const time = minTime + (i * totalMinutes) / 7;
+        {Array.from({ length: 10 }).map((_, i) => {
+          const time = minTime + (i * totalMinutes) / 9;
           const h = Math.floor(time / 60);
           return (
-            <div key={i} className="text-[10px] text-white/40 font-mono text-right">
+            <div key={i} className="text-xs text-white/45 font-mono text-right">
               {h > 12 ? h - 12 : h}
               {h >= 12 ? "pm" : "am"}
             </div>
@@ -136,24 +146,24 @@ function TimelineView({ tasks }: { tasks: Task[] }) {
           return (
             <div
               key={task.id}
-              className={`absolute left-0 right-0 transition-all duration-300 cursor-pointer ${
+              className={`absolute left-0 right-0 transition-[transform,box-shadow,filter] duration-300 ease-out cursor-pointer will-change-transform ${
                 typeStyles[task.type]
-              } ${isHovered ? "scale-[1.02] shadow-2xl z-10" : "scale-100"} backdrop-blur-sm border rounded-xl p-3`}
+              } ${isHovered ? "translate-x-1 shadow-2xl shadow-black/50 z-10 ring-1 ring-white/20" : "translate-x-0"} backdrop-blur-sm border rounded-xl p-3`}
               style={{ top: `${top}%`, height: `${Math.max(height, 6)}%` }}
               onMouseEnter={() => setHoveredTask(task.id)}
               onMouseLeave={() => setHoveredTask(null)}
             >
               <div className="flex items-start justify-between gap-2 h-full">
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-semibold text-white truncate">{task.title}</div>
+                  <div className="text-base font-semibold text-white truncate">{task.title}</div>
                   {height > 8 && (
-                    <div className="text-xs text-white/70 mt-1 flex items-center gap-2">
+                    <div className="text-sm text-white/75 mt-1 flex items-center gap-2">
                       <span>
                         {task.start} - {task.end}
                       </span>
                       {task.priority && (
                         <span
-                          className={`px-1.5 py-0.5 rounded text-[10px] ${
+                          className={`px-2 py-0.5 rounded text-xs font-medium ${
                             task.priority === "high"
                               ? "bg-red-500/30"
                               : task.priority === "medium"
@@ -169,7 +179,7 @@ function TimelineView({ tasks }: { tasks: Task[] }) {
                 </div>
 
                 {isHovered && (
-                  <button className="p-1 rounded-lg bg-white/10 hover:bg-white/20 transition-colors">
+                  <button className="p-1 rounded-lg bg-white/10 hover:bg-white/20 transition-colors duration-200">
                     <svg className="w-4 h-4 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path
                         strokeLinecap="round"
@@ -191,7 +201,7 @@ function TimelineView({ tasks }: { tasks: Task[] }) {
 
 function StatCard({ value, label, trend }: { value: string; label: string; trend?: string }) {
   return (
-    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 p-5 group hover:border-white/20 transition-all">
+    <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 p-5 group hover:border-white/20 transition-all duration-300 ease-out hover:-translate-y-0.5 hover:shadow-xl hover:shadow-black/30">
       <div className="absolute top-0 right-0 w-32 h-32 bg-gradient-to-br from-blue-500/10 to-purple-500/10 rounded-full blur-3xl group-hover:scale-150 transition-transform duration-700" />
       <div className="relative">
         <div className="text-3xl font-bold text-white mb-1">{value}</div>
@@ -261,15 +271,15 @@ export default function HomePage() {
             <div className="flex flex-col sm:flex-row gap-4">
               <button
                 onClick={() => router.push("/get-started")}
-                className="group relative overflow-hidden bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold px-8 py-4 rounded-xl transition-all shadow-xl shadow-blue-500/25 hover:shadow-blue-500/40"
+                className="group relative overflow-hidden bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold px-8 py-4 rounded-xl transition-all duration-300 ease-out shadow-xl shadow-blue-500/25 hover:shadow-blue-500/40 hover:-translate-y-0.5 active:scale-[0.99]"
               >
                 <span className="relative z-10">Start free trial</span>
-                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
+                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/20 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-900 ease-out" />
               </button>
 
               <button
                 onClick={() => router.push("/demo")}
-                className="border border-white/20 hover:border-white/40 hover:bg-white/5 text-white font-semibold px-8 py-4 rounded-xl transition-all backdrop-blur-sm"
+                className="border border-white/20 hover:border-white/40 hover:bg-white/5 text-white font-semibold px-8 py-4 rounded-xl transition-all duration-300 ease-out backdrop-blur-sm hover:-translate-y-0.5 active:scale-[0.99]"
               >
                 Watch demo
               </button>
@@ -285,7 +295,7 @@ export default function HomePage() {
 
           {/* Right - Interactive Preview */}
           <div className={`${mounted ? "animate-slide-in-right" : "opacity-0"}`}>
-            <div className="rounded-3xl bg-gradient-to-br from-slate-900 to-slate-800 border border-white/10 p-8 shadow-2xl backdrop-blur-xl">
+            <div className="rounded-3xl bg-gradient-to-br from-slate-900 to-slate-800 border border-white/10 p-8 shadow-2xl backdrop-blur-xl transition-all duration-500 ease-out hover:border-white/20 hover:shadow-blue-500/10">
               {/* Controls */}
               <div className="space-y-6 mb-6">
                 <div className="flex items-center justify-between">
@@ -302,10 +312,10 @@ export default function HomePage() {
                     <button
                       key={time}
                       onClick={() => setPreference(time)}
-                      className={`px-4 py-3 rounded-xl text-sm font-medium transition-all ${
+                      className={`px-4 py-3 rounded-xl text-sm font-medium transition-all duration-300 ease-out active:scale-[0.98] ${
                         preference === time
-                          ? "bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg"
-                          : "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white"
+                          ? "bg-gradient-to-r from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-500/25"
+                          : "bg-white/5 text-white/60 hover:bg-white/10 hover:text-white hover:-translate-y-0.5"
                       }`}
                     >
                       {time === "morning" ? "🌅" : time === "afternoon" ? "☀️" : "🌙"}{" "}
@@ -363,11 +373,11 @@ export default function HomePage() {
               <div className="mt-6 flex gap-3">
                 <button
                   onClick={() => router.push("/get-started")}
-                  className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-500/25"
+                  className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white font-semibold py-3 rounded-xl transition-all duration-300 ease-out shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 hover:-translate-y-0.5 active:scale-[0.99]"
                 >
                   Create my schedule
                 </button>
-                <button className="px-4 py-3 rounded-xl border border-white/20 bg-white/5 hover:bg-white/10 transition-all">
+                <button className="px-4 py-3 rounded-xl border border-white/20 bg-white/5 hover:bg-white/10 transition-all duration-300 ease-out hover:-translate-y-0.5 active:scale-[0.99]">
                   <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path
                       strokeLinecap="round"
@@ -426,7 +436,7 @@ export default function HomePage() {
             ].map((feature, i) => (
               <div
                 key={i}
-                className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 p-8 hover:border-white/20 transition-all duration-300"
+                className="group relative overflow-hidden rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 p-8 hover:border-white/20 transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-xl hover:shadow-black/30"
               >
                 <div className="absolute top-0 right-0 w-40 h-40 bg-gradient-to-br from-blue-500/10 to-purple-500/10 rounded-full blur-3xl group-hover:scale-150 transition-transform duration-700" />
                 <div className="relative">
@@ -459,7 +469,7 @@ export default function HomePage() {
               { step: "03", title: "Let AI optimize", desc: "Aurora analyzes your schedule and creates an optimized plan that actually works.", icon: "⚡" },
             ].map((item, i) => (
               <div key={i} className="relative">
-                <div className="relative rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 p-8 hover:border-white/20 transition-all">
+                <div className="relative rounded-2xl bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 p-8 hover:border-white/20 transition-all duration-300 ease-out hover:-translate-y-1 hover:shadow-xl hover:shadow-black/30">
                   <div className="absolute -top-6 left-8 w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500 to-indigo-600 border-4 border-black flex items-center justify-center text-sm font-bold shadow-lg">
                     {item.step}
                   </div>
@@ -508,10 +518,10 @@ export default function HomePage() {
             ].map((plan, i) => (
               <div
                 key={i}
-                className={`relative rounded-2xl p-8 ${
+                className={`relative rounded-2xl p-8 transition-all duration-300 ease-out hover:-translate-y-1 ${
                   plan.popular
-                    ? "bg-gradient-to-br from-blue-500/10 to-indigo-600/10 border-2 border-blue-500/50 shadow-xl shadow-blue-500/20"
-                    : "bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10"
+                    ? "bg-gradient-to-br from-blue-500/10 to-indigo-600/10 border-2 border-blue-500/50 shadow-xl shadow-blue-500/20 hover:shadow-blue-500/30"
+                    : "bg-gradient-to-br from-white/5 to-white/[0.02] border border-white/10 hover:border-white/20 hover:shadow-xl hover:shadow-black/30"
                 }`}
               >
                 {plan.popular && (
@@ -551,8 +561,8 @@ export default function HomePage() {
   }}
   className={`w-full py-3 rounded-xl font-semibold transition-all ${
     plan.popular
-      ? "bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/25"
-      : "bg-white/10 hover:bg-white/20 text-white border border-white/20"
+      ? "bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 hover:-translate-y-0.5 active:scale-[0.99]"
+      : "bg-white/10 hover:bg-white/20 text-white border border-white/20 hover:-translate-y-0.5 active:scale-[0.99]"
   }`}
 >
   {plan.cta}
@@ -572,11 +582,11 @@ export default function HomePage() {
               <div className="flex flex-col sm:flex-row gap-4 justify-center">
                 <button
                   onClick={() => router.push("/get-started")}
-                  className="bg-white text-blue-600 font-bold px-10 py-4 rounded-xl hover:bg-white/90 transition-all shadow-xl"
+                  className="bg-white text-blue-600 font-bold px-10 py-4 rounded-xl hover:bg-white/90 transition-all duration-300 ease-out shadow-xl hover:-translate-y-0.5 active:scale-[0.99]"
                 >
                   Start free trial
                 </button>
-                <button className="bg-white/10 backdrop-blur-sm border border-white/30 hover:bg-white/20 text-white font-bold px-10 py-4 rounded-xl transition-all">
+                <button className="bg-white/10 backdrop-blur-sm border border-white/30 hover:bg-white/20 text-white font-bold px-10 py-4 rounded-xl transition-all duration-300 ease-out hover:-translate-y-0.5 active:scale-[0.99]">
                   Schedule demo
                 </button>
               </div>
@@ -640,10 +650,10 @@ export default function HomePage() {
           to { opacity: 1; transform: translateX(0); }
         }
         .animate-fade-in {
-          animation: fade-in 0.8s ease-out;
+          animation: fade-in 0.65s cubic-bezier(0.22, 1, 0.36, 1);
         }
         .animate-slide-in-right {
-          animation: slide-in-right 0.8s ease-out;
+          animation: slide-in-right 0.7s cubic-bezier(0.22, 1, 0.36, 1);
         }
         .slider::-webkit-slider-thumb {
           appearance: none;
@@ -653,6 +663,17 @@ export default function HomePage() {
           background: linear-gradient(to right, rgb(59 130 246), rgb(79 70 229));
           cursor: pointer;
           box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+          transition: transform 160ms ease-out, box-shadow 200ms ease-out;
+        }
+        .slider::-webkit-slider-thumb:hover {
+          transform: scale(1.06);
+          box-shadow: 0 6px 14px rgba(59, 130, 246, 0.48);
+        }
+        @media (prefers-reduced-motion: reduce) {
+          .animate-fade-in,
+          .animate-slide-in-right {
+            animation: none;
+          }
         }
       `}</style>
     </div>

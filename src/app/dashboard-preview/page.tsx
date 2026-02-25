@@ -7,9 +7,11 @@ type TimePreference = "morning" | "afternoon" | "evening";
 type Intensity = "light" | "balanced" | "intense";
 
 type TaskInput = {
+  id?: string;
   title: string;
   minutes: number;
   priority: "high" | "medium" | "low";
+  completed?: boolean;
 };
 
 type SetupPayload = {
@@ -47,6 +49,14 @@ function formatDisplayDate(dateString: string) {
   if (!year || !month || !day) return dateString;
   const date = new Date(year, month - 1, day);
   return date.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function normalizeTitle(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/^(deep work|focus block|class|break|admin|health|leisure)\s*:\s*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 // (Same logic style as get-started) generate schedule for dashboard if preview not saved
@@ -125,9 +135,27 @@ function StatCard({ value, label, sub }: { value: string; label: string; sub?: s
 function Timeline({
   blocks,
   height = 520,
+  onFinish,
 }: {
-  blocks: { title: string; start: string; end: string; type: string; priority?: string }[];
+  blocks: {
+    title: string;
+    start: string;
+    end: string;
+    type: string;
+    priority?: string;
+    taskId?: string | null;
+    completed?: boolean;
+  }[];
   height?: number;
+  onFinish?: (block: {
+    title: string;
+    start: string;
+    end: string;
+    type: string;
+    priority?: string;
+    taskId?: string | null;
+    completed?: boolean;
+  }) => void;
 }) {
   const sorted = [...blocks].sort((a, b) => a.start.localeCompare(b.start));
 
@@ -170,6 +198,20 @@ function Timeline({
                     {b.priority}
                   </span>
                 )}
+
+                {b.taskId ? (
+                  <button
+                    onClick={() => onFinish?.(b)}
+                    disabled={Boolean(b.completed)}
+                    className={`text-[10px] px-2 py-0.5 rounded-lg border whitespace-nowrap transition ${
+                      b.completed
+                        ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-200"
+                        : "bg-white/10 border-white/20 text-white/80 hover:bg-white/20"
+                    }`}
+                  >
+                    {b.completed ? "Done" : "Finish"}
+                  </button>
+                ) : null}
               </div>
             </div>
           </div>
@@ -186,6 +228,8 @@ type ScheduleBlock = {
   tag?: string;
   type?: string;
   priority?: string;
+  taskId?: string | null;
+  completed?: boolean;
 };
 
 type ScheduleRecord = {
@@ -203,26 +247,70 @@ function mapTagToType(tag?: string) {
 }
 
 function normalizeTasks(data: unknown): TaskInput[] {
-  const raw = Array.isArray(data)
+  const raw: unknown[] = Array.isArray(data)
     ? data
     : Array.isArray((data as { tasks?: unknown }).tasks)
-    ? (data as { tasks?: unknown }).tasks
+    ? ((data as { tasks?: unknown[] }).tasks ?? [])
     : [];
 
   return raw
-    .map((item) => {
+    .map((item: unknown): TaskInput | null => {
       if (!item || typeof item !== "object") return null;
-      const t = item as { title?: unknown; minutes?: unknown; priority?: unknown };
+      const t = item as {
+        id?: unknown;
+        title?: unknown;
+        minutes?: unknown;
+        priority?: unknown;
+        completed?: unknown;
+      };
+      const id = typeof t.id === "string" ? t.id : undefined;
       const title = typeof t.title === "string" ? t.title : null;
       const minutes = typeof t.minutes === "number" ? t.minutes : Number(t.minutes);
-      const priority =
+      const priority: TaskInput["priority"] =
         t.priority === "high" || t.priority === "medium" || t.priority === "low"
           ? t.priority
           : "medium";
       if (!title || !Number.isFinite(minutes)) return null;
-      return { title, minutes, priority };
+      return { id, title, minutes, priority, completed: Boolean(t.completed) };
     })
-    .filter((t): t is TaskInput => Boolean(t));
+    .filter((t: TaskInput | null): t is TaskInput => Boolean(t));
+}
+
+function resolveBlockTask(
+  block: { title: string; taskId?: string | null },
+  tasks: TaskInput[]
+) {
+  if (block.taskId) {
+    const byId = tasks.find((task) => task.id === block.taskId);
+    if (byId) {
+      return {
+        taskId: byId.id ?? block.taskId,
+        completed: Boolean(byId.completed),
+        priority: byId.priority,
+      };
+    }
+  }
+
+  const normalized = normalizeTitle(block.title);
+  const direct = tasks.find((task) => normalizeTitle(task.title) === normalized);
+  if (direct) {
+    return {
+      taskId: direct.id ?? null,
+      completed: Boolean(direct.completed),
+      priority: direct.priority,
+    };
+  }
+
+  const partial = tasks.find((task) => {
+    const taskTitle = normalizeTitle(task.title);
+    return normalized.includes(taskTitle) || taskTitle.includes(normalized);
+  });
+
+  return {
+    taskId: partial?.id ?? null,
+    completed: Boolean(partial?.completed),
+    priority: partial?.priority,
+  };
 }
 
 export default function DashboardPreviewPage() {
@@ -234,6 +322,7 @@ export default function DashboardPreviewPage() {
   const [schedule, setSchedule] = useState<ScheduleRecord | null>(null);
   const [apiTasks, setApiTasks] = useState<TaskInput[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [refreshCount, setRefreshCount] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -271,7 +360,7 @@ export default function DashboardPreviewPage() {
     return () => {
       active = false;
     };
-  }, [effectiveDate]);
+  }, [effectiveDate, refreshCount]);
 
   useEffect(() => {
     if (!isFullscreen) return;
@@ -286,14 +375,25 @@ export default function DashboardPreviewPage() {
     const raw = schedule?.blocks;
     if (!raw || !Array.isArray(raw)) return [];
 
-    return raw.map((b) => ({
-      title: b.title,
-      start: b.start,
-      end: b.end,
-      type: b.type ?? mapTagToType(b.tag),
-      priority: b.priority,
-    }));
-  }, [schedule]);
+    return raw.map((b) => {
+      const base = {
+        title: b.title,
+        start: b.start,
+        end: b.end,
+        type: b.type ?? mapTagToType(b.tag),
+        priority: b.priority,
+        taskId: b.taskId ?? null,
+        completed: Boolean(b.completed),
+      };
+      const resolved = resolveBlockTask(base, apiTasks);
+      return {
+        ...base,
+        taskId: base.taskId ?? resolved.taskId,
+        completed: base.completed || resolved.completed,
+        priority: base.priority ?? resolved.priority,
+      };
+    });
+  }, [schedule, apiTasks]);
 
   const blocks = useMemo(() => {
     if (generatedBlocks.length) return generatedBlocks;
@@ -302,6 +402,47 @@ export default function DashboardPreviewPage() {
       ? setup.preview
       : generateDayPreview(setup.preference, setup.intensity, setup.focusHours, setup.tasks);
   }, [generatedBlocks, setup]);
+
+  async function markBlockDone(block: {
+    taskId?: string | null;
+    completed?: boolean;
+  }) {
+    if (!block.taskId || block.completed) return;
+    try {
+      const res = await fetch(`/api/tasks/${block.taskId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed: true }),
+      });
+      if (!res.ok) throw new Error("Failed to finish task");
+
+      setApiTasks((prev) =>
+        prev.map((task) =>
+          task.id === block.taskId ? { ...task, completed: true } : task
+        )
+      );
+
+      setSchedule((prev) => {
+        if (!prev?.blocks) return prev;
+        return {
+          ...prev,
+          blocks: prev.blocks.map((entry) =>
+            entry.taskId === block.taskId
+              ? { ...entry, completed: true }
+              : entry
+          ),
+        };
+      });
+
+      // Refresh tasks data to update achievements
+      setRefreshCount((prev) => prev + 1);
+      alert("✅ Task marked done! Points awarded.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to mark task as finished.";
+      console.error("markBlockDone error:", message);
+      alert(`❌ ${message}`);
+    }
+  }
 
   const totals = useMemo(() => {
     if (!blocks.length) return { focusMin: 0, breakMin: 0, taskCount: 0 };
@@ -454,7 +595,7 @@ export default function DashboardPreviewPage() {
               </div>
             </div>
             <div className="max-h-[520px] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-              <Timeline blocks={blocks} height={920} />
+              <Timeline blocks={blocks} height={920} onFinish={markBlockDone} />
             </div>
           </div>
 
@@ -496,6 +637,11 @@ export default function DashboardPreviewPage() {
                         >
                         {t.priority}
                       </span>
+                      {t.completed ? (
+                        <span className="text-[10px] px-2 py-1 rounded-lg border border-emerald-500/40 bg-emerald-500/20 text-emerald-200">
+                          done
+                        </span>
+                      ) : null}
                     </div>
                   </div>
                 ))
@@ -532,7 +678,7 @@ export default function DashboardPreviewPage() {
               </div>
             </div>
             <div className="max-h-[calc(100vh-180px)] overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
-              <Timeline blocks={blocks} height={1400} />
+              <Timeline blocks={blocks} height={1400} onFinish={markBlockDone} />
             </div>
           </div>
         </div>

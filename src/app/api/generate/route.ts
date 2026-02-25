@@ -17,6 +17,14 @@ const ScheduleSchema = z.object({
   ),
 });
 
+function normalizeTitle(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/^(deep work|focus block|class|break|admin|health|leisure)\s*:\s*/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 const GenerateRequestSchema = z.object({
   tasks: z.array(
     z.object({
@@ -107,19 +115,37 @@ export async function POST(req: Request) {
 
     const [, aiResult] = await Promise.all([dbPromise, generatePromise]);
 
+    const scheduleWithTaskId = aiResult.object.schedule.map((block) => {
+      const normalizedBlockTitle = normalizeTitle(block.title);
+      const matchedTask = parsed.data.tasks.find((task) => {
+        if (!task.id) return false;
+        const normalizedTaskTitle = normalizeTitle(task.title);
+        return (
+          normalizedBlockTitle === normalizedTaskTitle ||
+          normalizedBlockTitle.includes(normalizedTaskTitle) ||
+          normalizedTaskTitle.includes(normalizedBlockTitle)
+        );
+      });
+
+      return {
+        ...block,
+        taskId: matchedTask?.id ?? null,
+      };
+    });
+
     // 2. Save using 'upsert' (Update if exists, Create if new)
     const saved = await prisma.schedule.upsert({
       where: {
         userId_date: { userId, date }, // Check if THIS user has a plan for THIS date
       },
       update: {
-        blocks: aiResult.object.schedule, // If yes, overwrite it
+        blocks: scheduleWithTaskId, // If yes, overwrite it
         userPrompt: promptValue,
       },
       create: {
         userId,
         date, // If no, create a new row for this date
-        blocks: aiResult.object.schedule,
+        blocks: scheduleWithTaskId,
         userPrompt: promptValue,
       },
     });
