@@ -12,15 +12,11 @@ type Block = {
   start: string;
   end: string;
   tag: BlockTag;
-  taskId?: string | null;
   priority?: BlockPriority | null;
-  completed?: boolean;
 };
 type TaskRow = {
-  id: string;
   title: string;
   priority?: string | null;
-  completed?: boolean;
 };
 
 const LS_AUTH = "aurora:authed";
@@ -123,40 +119,6 @@ function resolveBlockPriority(blockTitle: string, tasks: TaskRow[]) {
   return normalizePriority(partial?.priority);
 }
 
-function resolveBlockTask(block: Block, tasks: TaskRow[]) {
-  if (block.taskId) {
-    const byId = tasks.find((task) => task.id === block.taskId);
-    if (byId) {
-      return {
-        taskId: byId.id,
-        priority: normalizePriority(byId.priority),
-        completed: Boolean(byId.completed),
-      };
-    }
-  }
-
-  const normalized = normalizeTitle(block.title);
-  const direct = tasks.find((task) => normalizeTitle(task.title) === normalized);
-  if (direct) {
-    return {
-      taskId: direct.id,
-      priority: normalizePriority(direct.priority),
-      completed: Boolean(direct.completed),
-    };
-  }
-
-  const partial = tasks.find((task) => {
-    const taskTitle = normalizeTitle(task.title);
-    return normalized.includes(taskTitle) || taskTitle.includes(normalized);
-  });
-
-  return {
-    taskId: partial?.id ?? null,
-    priority: normalizePriority(partial?.priority),
-    completed: Boolean(partial?.completed),
-  };
-}
-
 export default function DashboardPage() {
   const router = useRouter();
   const [blocks, setBlocks] = useState<Block[]>([]);
@@ -164,7 +126,8 @@ export default function DashboardPage() {
   const [editing, setEditing] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
-  const [refreshCount, setRefreshCount] = useState(0);
+  const [calendarTab, setCalendarTab] = useState<"daily" | "monthly">("daily");
+  const [multiSelectedDates, setMultiSelectedDates] = useState<Date[]>([]);
   const dayStart = 6 * 60;
   const baseDayEnd = 22 * 60;
   const baseDaySpan = baseDayEnd - dayStart;
@@ -213,12 +176,10 @@ export default function DashboardPage() {
           return;
         }
 
-        const tasks: TaskRow[] = tasksRes.ok
-          ? (await tasksRes.json()).map((task: TaskRow) => ({ ...task, id: String(task.id) }))
-          : [];
+        const tasks: TaskRow[] = tasksRes.ok ? await tasksRes.json() : [];
         const parsed = (data.blocks as Block[]).map((block) => ({
           ...block,
-          ...resolveBlockTask(block, tasks),
+          priority: resolveBlockPriority(block.title, tasks),
         }));
 
         parsed.sort((a, b) => toMin(a.start) - toMin(b.start));
@@ -232,7 +193,7 @@ export default function DashboardPage() {
     return () => {
       active = false;
     };
-  }, [router, refreshCount]);
+  }, [router]);
 
   // Calendar schedule (selected date)
   useEffect(() => {
@@ -254,12 +215,10 @@ export default function DashboardPage() {
           return;
         }
 
-        const tasks: TaskRow[] = tasksRes.ok
-          ? (await tasksRes.json()).map((task: TaskRow) => ({ ...task, id: String(task.id) }))
-          : [];
+        const tasks: TaskRow[] = tasksRes.ok ? await tasksRes.json() : [];
         const parsed = (data.blocks as Block[]).map((block) => ({
           ...block,
-          ...resolveBlockTask(block, tasks),
+          priority: resolveBlockPriority(block.title, tasks),
         }));
 
         parsed.sort((a, b) => toMin(a.start) - toMin(b.start));
@@ -273,7 +232,7 @@ export default function DashboardPage() {
     return () => {
       active = false;
     };
-  }, [selectedDate, refreshCount]);
+  }, [selectedDate]);
 
   const deepCount = useMemo(
     () => blocks.filter((b) => b.tag === "Deep Work").length,
@@ -282,7 +241,7 @@ export default function DashboardPage() {
 
   async function saveSchedule() {
     try {
-      const payloadBlocks = blocks.map(({ priority, completed, ...rest }) => rest);
+      const payloadBlocks = blocks.map(({ priority, ...rest }) => rest);
       const res = await fetch("/api/schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -331,35 +290,6 @@ export default function DashboardPage() {
     });
   }
 
-  async function markBlockDone(target: Block, mode: "today" | "selected") {
-    if (!target.taskId || target.completed) return;
-    try {
-      const res = await fetch(`/api/tasks/${target.taskId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ completed: true }),
-      });
-
-      if (!res.ok) throw new Error("Failed to finish task");
-
-      const markDone = (list: Block[]) =>
-        list.map((block) =>
-          block.taskId === target.taskId ? { ...block, completed: true } : block
-        );
-
-      if (mode === "today") setBlocks((prev) => markDone(prev));
-      else setSelectedBlocks((prev) => markDone(prev));
-
-      // Refresh tasks data to update achievements
-      setRefreshCount((prev) => prev + 1);
-      alert("✅ Task marked done! Points awarded.");
-    } catch (err) {
-      const message = err instanceof Error ? err.message : "Failed to mark task as finished.";
-      console.error("markBlockDone error:", message);
-      alert(`❌ ${message}`);
-    }
-  }
-
   // Calendar helpers
   function getDaysInMonth(d: Date) {
     return new Date(d.getFullYear(), d.getMonth() + 1, 0).getDate();
@@ -391,6 +321,11 @@ export default function DashboardPage() {
   }
 
   const today = new Date();
+  const currentMonthValue = today.getFullYear() * 12 + today.getMonth();
+  const selectedMonthValue = selectedDate.getFullYear() * 12 + selectedDate.getMonth();
+  const monthDiff = selectedMonthValue - currentMonthValue;
+  const canGoPrev = monthDiff > 0;
+  const canGoNext = monthDiff < 1;
   const daysInMonth = getDaysInMonth(selectedDate);
   const firstDay = getFirstDayOfMonth(selectedDate);
   const calendarDays = [];
@@ -575,19 +510,6 @@ export default function DashboardPage() {
                   </div>
 
                   <div className="flex items-center gap-2">
-                    {b.taskId ? (
-                      <button
-                        onClick={() => markBlockDone(b, "today")}
-                        disabled={Boolean(b.completed)}
-                        className={`rounded-xl border px-2 py-1 text-xs font-semibold transition ${
-                          b.completed
-                            ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-200"
-                            : "border-white/10 bg-white/5 hover:bg-white/10"
-                        }`}
-                      >
-                        {b.completed ? "Done" : "Finish"}
-                      </button>
-                    ) : null}
                     <span className={tagClass(b.tag)}>{b.tag}</span>
                   </div>
                 </div>
@@ -624,9 +546,69 @@ export default function DashboardPage() {
 
       {/* Calendar */}
       <Card className="!border-purple-400/40 !bg-gradient-to-br !from-purple-500/10 !via-black/30 !to-indigo-500/10">
+        <div className="mb-6 flex justify-center">
+          <div className="flex rounded-full border border-purple-500/30 bg-black/40 p-1 backdrop-blur-md">
+            <button
+              onClick={() => setCalendarTab("daily")}
+              className={`rounded-full px-6 py-1.5 text-sm font-semibold transition-all ${
+                calendarTab === "daily"
+                  ? "bg-gradient-to-r from-purple-500 to-indigo-600 text-white shadow-lg"
+                  : "text-white/50 hover:text-white"
+              }`}
+            >
+              Daily Plans
+            </button>
+            <button
+              onClick={() => {
+                setCalendarTab("monthly");
+                if (calendarTab === "daily") setMultiSelectedDates([]);
+              }}
+              className={`rounded-full px-6 py-1.5 text-sm font-semibold transition-all ${
+                calendarTab === "monthly"
+                  ? "bg-gradient-to-r from-purple-500 to-indigo-600 text-white shadow-lg"
+                  : "text-white/50 hover:text-white"
+              }`}
+            >
+              Weekly/Batch Plans
+            </button>
+          </div>
+        </div>
+
         <div className="flex items-center justify-center gap-8">
           <div className="rounded-3xl border border-purple-400/30 bg-gradient-to-br from-purple-500/10 to-black/40 p-6 backdrop-blur-sm">
-            <div className="mb-4 text-base font-semibold bg-gradient-to-r from-purple-200 to-indigo-200 bg-clip-text text-transparent">This Month's Plans</div>
+            <div className="mb-4 flex items-center justify-between px-1">
+  <button
+    onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() - 1, 1))}
+    disabled={!canGoPrev}
+    className={`rounded-lg p-1 transition-colors ${
+      canGoPrev
+        ? "text-purple-300/70 hover:bg-purple-500/20 hover:text-white"
+        : "text-white/10 cursor-not-allowed"
+    }`}
+  >
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+    </svg>
+  </button>
+  
+  <div className="text-sm font-semibold bg-gradient-to-r from-purple-200 to-indigo-200 bg-clip-text text-transparent">
+    {selectedDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+  </div>
+
+  <button
+    onClick={() => setSelectedDate(new Date(selectedDate.getFullYear(), selectedDate.getMonth() + 1, 1))}
+    disabled={!canGoNext}
+    className={`rounded-lg p-1 transition-colors ${
+      canGoNext
+        ? "text-purple-300/70 hover:bg-purple-500/20 hover:text-white"
+        : "text-white/10 cursor-not-allowed"
+    }`}
+  >
+    <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+    </svg>
+  </button>
+</div>
             <div className="grid grid-cols-7 gap-3 w-fit">
               {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((d) => (
                 <div key={d} className="text-center text-xs font-bold text-purple-300/70 w-8">
@@ -636,12 +618,56 @@ export default function DashboardPage() {
               {calendarDays.map((date, i) => {
                 const isToday = date && isSameDay(date, today);
                 const isPastDate = !!date && isPast(date);
-                const isSelected = date && isSameDay(date, selectedDate);
+                const isSelected = date && (
+                  calendarTab === "daily"
+                    ? isSameDay(date, selectedDate)
+                    : multiSelectedDates.some((d) => isSameDay(d, date))
+                );
                 return (
                   <button
                     key={i}
                     disabled={isPastDate}
-                    onClick={() => date && setSelectedDate(date)}
+                    onClick={() => {
+                      if (!date) return;
+                      if (calendarTab === "daily") {
+                        setSelectedDate(date);
+                      } else {
+                        setMultiSelectedDates((prev) => {
+                          if (prev.length === 0) return [date];
+
+                          const sorted = [...prev].sort((a, b) => a.getTime() - b.getTime());
+                          const minDate = sorted[0];
+                          const maxDate = sorted[sorted.length - 1];
+
+                          const exists = prev.some((d) => isSameDay(d, date));
+                          if (exists) {
+                            if (isSameDay(date, minDate) || isSameDay(date, maxDate)) {
+                              return prev.filter((d) => !isSameDay(d, date));
+                            }
+                            return [date];
+                          }
+
+                          const isOneDayBefore = isSameDay(
+                            date,
+                            new Date(minDate.getFullYear(), minDate.getMonth(), minDate.getDate() - 1)
+                          );
+                          const isOneDayAfter = isSameDay(
+                            date,
+                            new Date(maxDate.getFullYear(), maxDate.getMonth(), maxDate.getDate() + 1)
+                          );
+
+                          if (isOneDayBefore || isOneDayAfter) {
+                            if (prev.length >= 7) {
+                              alert("You can only select up to 7 consecutive days.");
+                              return prev;
+                            }
+                            return [...prev, date];
+                          }
+
+                          return [date];
+                        });
+                      }
+                    }}
                     className={`rounded-lg p-2 text-xs font-semibold transition-all duration-200 w-8 h-8 ${
                       !date
                         ? ""
@@ -662,52 +688,77 @@ export default function DashboardPage() {
           </div>
           <div className="flex flex-col items-center gap-3 h-full">
             <div className="rounded-3xl border border-purple-400/40 bg-gradient-to-br from-indigo-500/10 to-black/40 p-4 w-52 max-h-60 overflow-y-auto backdrop-blur-sm flex flex-col flex-1">
-              <div className="text-sm font-semibold text-transparent bg-clip-text bg-gradient-to-r from-indigo-300 to-purple-300 mb-3">
-                {selectedDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
-              </div>
-              {selectedBlocks.length > 0 ? (
-                <div className="space-y-2">
-                  {selectedBlocks.map((b, idx) => (
-                    <div
-                      key={idx}
-                      className={`text-xs border-l-2 pl-2 rounded px-2 py-1 transition-all ${blockAccentClass(
-                        b.tag
-                      )}`}
-                    >
-                      <div className="font-semibold text-white/90 truncate">{b.title}</div>
-                      <div className="flex items-center justify-between gap-2 mt-0.5">
-                        <div className="text-white/50">{b.start} – {b.end}</div>
-                        {b.taskId ? (
-                          <button
-                            onClick={() => markBlockDone(b, "selected")}
-                            disabled={Boolean(b.completed)}
-                            className={`rounded-lg border px-2 py-0.5 text-[10px] font-semibold transition ${
-                              b.completed
-                                ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-200"
-                                : "border-white/10 bg-white/5 hover:bg-white/10"
-                            }`}
-                          >
-                            {b.completed ? "Done" : "Finish"}
-                          </button>
-                        ) : null}
-                      </div>
+              {calendarTab === "daily" ? (
+                <>
+                  <div className="mb-3 bg-gradient-to-r from-indigo-300 to-purple-300 bg-clip-text text-sm font-semibold text-transparent">
+                    {selectedDate.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                  </div>
+                  {selectedBlocks.length > 0 ? (
+                    <div className="space-y-2">
+                      {selectedBlocks.map((b, idx) => (
+                        <div
+                          key={idx}
+                          className={`text-xs border-l-2 pl-2 rounded px-2 py-1 transition-all ${blockAccentClass(
+                            b.tag
+                          )}`}
+                        >
+                          <div className="font-semibold text-white/90 truncate">{b.title}</div>
+                          <div className="text-white/50">{b.start} – {b.end}</div>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  ) : (
+                    <div className="text-xs text-white/50">No blocks scheduled</div>
+                  )}
+                </>
               ) : (
-                <div className="text-xs text-white/50">No blocks scheduled</div>
+                <>
+                  <div className="mb-3 bg-gradient-to-r from-indigo-300 to-purple-300 bg-clip-text text-sm font-semibold text-transparent">
+                    Batch Planning
+                  </div>
+                  <div className="mb-2 text-xs text-white/60">
+                    Select 5 to 7 days to generate a schedule for the entire week/batch.
+                  </div>
+                  <div className="mt-2 space-y-1">
+                    {multiSelectedDates
+                      .slice()
+                      .sort((a, b) => a.getTime() - b.getTime())
+                      .map((date, index) => (
+                        <div key={index} className="rounded bg-purple-500/20 px-2 py-1 text-xs text-purple-200">
+                          {date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+                        </div>
+                      ))}
+                  </div>
+                </>
               )}
             </div>
-            <Button
-              onClick={() => {
-                const dateParam = formatDate(selectedDate);
-                const target = selectedBlocks.length > 0 ? "/dashboard-preview" : "/get-started";
-                router.push(`${target}?date=${dateParam}`);
-              }}
-              className="px-4 py-2 text-sm bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 shadow-lg shadow-purple-500/25 hover:scale-105 transition-transform duration-200"
-            >
-              {selectedBlocks.length > 0 ? "Edit Plan" : "Make Plans"}
-            </Button>
+            {calendarTab === "daily" ? (
+              <Button
+                onClick={() => {
+                  const dateParam = formatDate(selectedDate);
+                  const target = selectedBlocks.length > 0 ? "/dashboard-preview" : "/get-started";
+                  router.push(`${target}?date=${dateParam}`);
+                }}
+                className="px-4 py-2 text-sm bg-gradient-to-r from-purple-500 to-indigo-600 hover:from-purple-600 hover:to-indigo-700 shadow-lg shadow-purple-500/25 hover:scale-105 transition-transform duration-200"
+              >
+                {selectedBlocks.length > 0 ? "Edit Plan" : "Make Plans"}
+              </Button>
+            ) : (
+              <Button
+                disabled={multiSelectedDates.length < 5}
+                onClick={() => {
+                  const datesParam = multiSelectedDates.map((date) => formatDate(date)).join(",");
+                  router.push(`/get-started?dates=${datesParam}`);
+                }}
+                className={`px-4 py-2 text-sm transition-transform duration-200 ${
+                  multiSelectedDates.length >= 5
+                    ? "bg-gradient-to-r from-purple-500 to-indigo-600 shadow-lg shadow-purple-500/25 hover:scale-105"
+                    : "cursor-not-allowed border border-white/10 bg-white/5 text-white/40"
+                }`}
+              >
+                Make Plans ({multiSelectedDates.length}/7)
+              </Button>
+            )}
           </div>
         </div>
       </Card>

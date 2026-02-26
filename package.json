@@ -12,11 +12,10 @@
     "@ai-sdk/openai": "^3.0.29",
     "@clerk/nextjs": "^6.37.4",
     "@prisma/adapter-mariadb": "^7.4.0",
-    "@prisma/client": "^7.4.0",
+    "@prisma/client": "^7.4.1",
     "ai": "^6.0.86",
     "mariadb": "^3.4.5",
     "next": "16.1.6",
-    "prisma": "^7.4.0",
     "react": "19.2.3",
     "react-dom": "19.2.3",
     "zod": "^4.3.6"
@@ -28,6 +27,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
+    "prisma": "^7.4.1",
     "tailwindcss": "^4",
     "typescript": "^5"
   }

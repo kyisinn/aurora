@@ -210,7 +210,12 @@ export default function GetStartedPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedDate = searchParams.get("date");
+  const selectedDatesStr = searchParams.get("dates");
   const todayIso = useMemo(() => toLocalIsoDate(), []);
+  const targetDates = useMemo(
+    () => (selectedDatesStr ? selectedDatesStr.split(",") : [selectedDate ?? todayIso]),
+    [selectedDatesStr, selectedDate, todayIso]
+  );
 
   const [step, setStep] = useState<1 | 2 | 3>(1);
 
@@ -317,12 +322,16 @@ export default function GetStartedPage() {
 
     async function loadSchedulePreview() {
       try {
-        const query = selectedDate ? `?date=${encodeURIComponent(selectedDate)}` : "";
+        const dateToFetch = selectedDatesStr ? targetDates[0] : selectedDate;
+        const query = dateToFetch ? `?date=${encodeURIComponent(dateToFetch)}` : "";
         const res = await fetch(`/api/schedule${query}`);
         if (!res.ok) return;
         const data = await res.json();
         const blocks = data?.blocks;
-        if (!active || !Array.isArray(blocks) || blocks.length === 0) return;
+        if (!active || !Array.isArray(blocks) || blocks.length === 0) {
+          if (active) setSchedulePreview(null);
+          return;
+        }
 
         setSchedulePreview(
           blocks.map((b: ScheduleBlockFromApi) => ({
@@ -342,7 +351,7 @@ export default function GetStartedPage() {
     return () => {
       active = false;
     };
-  }, [selectedDate]);
+  }, [selectedDate, selectedDatesStr, targetDates]);
 
   useEffect(() => {
     const payload: SetupPayload = { preference, intensity, focusHours, tasks, preview };
@@ -657,7 +666,9 @@ export default function GetStartedPage() {
                   </button>
                   <button
                     onClick={() => {
-                      const query = selectedDate ? `?date=${encodeURIComponent(selectedDate)}` : "";
+                      const query = selectedDatesStr
+                        ? `?dates=${encodeURIComponent(selectedDatesStr)}`
+                        : `?date=${encodeURIComponent(selectedDate || todayIso)}`;
                       router.push(`/generate${query}`);
                     }}
                     className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-500/25"
@@ -682,7 +693,9 @@ export default function GetStartedPage() {
                 <div>
                   <div className="text-sm text-white/60">Live preview</div>
                   <div className="text-lg font-bold">
-                    {selectedDate && selectedDate !== todayIso
+                    {selectedDatesStr
+                      ? `Batch Plan (${targetDates.length} days)`
+                      : selectedDate && selectedDate !== todayIso
                       ? formatDisplayDate(selectedDate)
                       : "Today’s schedule"}
                   </div>

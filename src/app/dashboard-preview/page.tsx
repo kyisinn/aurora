@@ -199,19 +199,6 @@ function Timeline({
                   </span>
                 )}
 
-                {b.taskId ? (
-                  <button
-                    onClick={() => onFinish?.(b)}
-                    disabled={Boolean(b.completed)}
-                    className={`text-[10px] px-2 py-0.5 rounded-lg border whitespace-nowrap transition ${
-                      b.completed
-                        ? "bg-emerald-500/20 border-emerald-500/40 text-emerald-200"
-                        : "bg-white/10 border-white/20 text-white/80 hover:bg-white/20"
-                    }`}
-                  >
-                    {b.completed ? "Done" : "Finish"}
-                  </button>
-                ) : null}
               </div>
             </div>
           </div>
@@ -317,12 +304,26 @@ export default function DashboardPreviewPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedDate = searchParams.get("date");
-  const effectiveDate = selectedDate ?? toLocalIsoDate();
+  const selectedDatesStr = searchParams.get("dates");
+  const targetDates = selectedDatesStr ? selectedDatesStr.split(",") : [];
+  const todayIso = useMemo(() => toLocalIsoDate(), []);
+  const [currentDayIndex, setCurrentDayIndex] = useState(0);
+  const effectiveDate = selectedDatesStr && targetDates.length > 0
+    ? targetDates[currentDayIndex]
+    : (selectedDate ?? todayIso);
   const [setup, setSetup] = useState<SetupPayload | null>(null);
   const [schedule, setSchedule] = useState<ScheduleRecord | null>(null);
   const [apiTasks, setApiTasks] = useState<TaskInput[]>([]);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [refreshCount, setRefreshCount] = useState(0);
+
+  useEffect(() => {
+    if (!selectedDatesStr || targetDates.length === 0) {
+      setCurrentDayIndex(0);
+      return;
+    }
+    setCurrentDayIndex((prev) => Math.min(prev, targetDates.length - 1));
+  }, [selectedDatesStr, targetDates.length]);
 
   useEffect(() => {
     let active = true;
@@ -507,7 +508,12 @@ export default function DashboardPreviewPage() {
           <div className="flex items-center gap-3">
 
             <button
-              onClick={() => router.push(`${hasGenerated ? "/generate" : "/get-started"}?date=${encodeURIComponent(effectiveDate)}`)}
+              onClick={() => {
+                const query = selectedDatesStr
+                  ? `?dates=${encodeURIComponent(selectedDatesStr)}`
+                  : `?date=${encodeURIComponent(effectiveDate)}`;
+                router.push(`${hasGenerated ? "/generate" : "/get-started"}${query}`);
+              }}
               className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl shadow-lg shadow-blue-500/25"
             >
               Regenerate
@@ -521,7 +527,11 @@ export default function DashboardPreviewPage() {
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6 mb-8">
           <div className="space-y-2">
             <h1 className="text-4xl font-bold tracking-tight">
-              {selectedDate ? `Your schedule for ${formatDisplayDate(effectiveDate)}` : "Your schedule today"}
+              {selectedDatesStr
+                ? `Your Batch Plan (${targetDates.length} days)`
+                : selectedDate
+                ? `Your schedule for ${formatDisplayDate(effectiveDate)}`
+                : "Your schedule today"}
             </h1>
             <div className="flex flex-wrap gap-2">
               {setup ? (
@@ -585,7 +595,35 @@ export default function DashboardPreviewPage() {
                 <div className="text-lg font-bold">Live preview</div>
               </div>
               <div className="flex items-center gap-3 text-xs text-white/50">
-                <span>{selectedDate ? `${formatDisplayDate(effectiveDate)} • Auto-generated` : "Today • Auto-generated"}</span>
+                {selectedDatesStr && targetDates.length > 1 && (
+                  <div className="flex items-center gap-1 rounded-lg border border-white/15 bg-white/5 p-0.5">
+                    <button
+                      onClick={() => setCurrentDayIndex((p) => Math.max(0, p - 1))}
+                      disabled={currentDayIndex === 0}
+                      className="p-1 text-white/70 transition-colors hover:text-white disabled:opacity-30"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => setCurrentDayIndex((p) => Math.min(targetDates.length - 1, p + 1))}
+                      disabled={currentDayIndex === targetDates.length - 1}
+                      className="p-1 text-white/70 transition-colors hover:text-white disabled:opacity-30"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
+                <span>
+                  {selectedDatesStr
+                    ? `Day ${currentDayIndex + 1}: ${formatDisplayDate(effectiveDate)} • Auto-generated`
+                    : selectedDate
+                    ? `${formatDisplayDate(effectiveDate)} • Auto-generated`
+                    : "Today • Auto-generated"}
+                </span>
                 <button
                   onClick={() => setIsFullscreen(true)}
                   className="rounded-lg border border-white/15 bg-white/5 hover:bg-white/10 px-3 py-1.5 text-xs text-white/70 transition"
@@ -607,7 +645,12 @@ export default function DashboardPreviewPage() {
                 <div className="text-lg font-bold">Your Inputs</div>
               </div>
               <button
-                onClick={() => router.push(hasGenerated ? "/generate" : "/get-started")}
+                onClick={() => {
+                  const query = selectedDatesStr
+                    ? `?dates=${encodeURIComponent(selectedDatesStr)}`
+                    : `?date=${encodeURIComponent(effectiveDate)}`;
+                  router.push(`${hasGenerated ? "/generate" : "/get-started"}${query}`);
+                }}
                 className="text-sm text-blue-300 hover:text-blue-200 transition"
               >
                 Edit
@@ -666,8 +709,34 @@ export default function DashboardPreviewPage() {
                 <div className="text-lg font-bold">Live preview</div>
               </div>
               <div className="flex items-center gap-3">
+                {selectedDatesStr && targetDates.length > 1 && (
+                  <div className="flex items-center gap-1 rounded-lg border border-white/15 bg-white/5 p-0.5">
+                    <button
+                      onClick={() => setCurrentDayIndex((p) => Math.max(0, p - 1))}
+                      disabled={currentDayIndex === 0}
+                      className="p-1 text-white/70 transition-colors hover:text-white disabled:opacity-30"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                      </svg>
+                    </button>
+                    <button
+                      onClick={() => setCurrentDayIndex((p) => Math.min(targetDates.length - 1, p + 1))}
+                      disabled={currentDayIndex === targetDates.length - 1}
+                      className="p-1 text-white/70 transition-colors hover:text-white disabled:opacity-30"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                      </svg>
+                    </button>
+                  </div>
+                )}
                 <div className="text-xs text-white/50">
-                  {selectedDate ? `${formatDisplayDate(effectiveDate)} • Auto-generated` : "Today • Auto-generated"}
+                  {selectedDatesStr
+                    ? `Day ${currentDayIndex + 1}: ${formatDisplayDate(effectiveDate)} • Auto-generated`
+                    : selectedDate
+                    ? `${formatDisplayDate(effectiveDate)} • Auto-generated`
+                    : "Today • Auto-generated"}
                 </div>
                 <button
                   onClick={() => setIsFullscreen(false)}

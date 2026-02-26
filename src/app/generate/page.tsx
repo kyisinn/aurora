@@ -38,8 +38,9 @@ type ProfileResponse = {
 export default function GeneratePage() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const selectedDate = searchParams.get("date");
-  const effectiveDate = selectedDate ?? new Date().toISOString().split("T")[0];
+  const datesParam = searchParams.get("dates");
+  const dateParam = searchParams.get("date");
+  const effectiveDate = dateParam ?? new Date().toISOString().split("T")[0];
 
   const [timePreference, setTimePreference] = useState<TimePreference | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
@@ -180,7 +181,8 @@ Rules:
           tasks,
           userPrompt,
           preferences: timePreference ? { timePreference } : undefined,
-          date: effectiveDate,
+          dates: datesParam ? datesParam.split(",") : undefined,
+          date: dateParam ?? effectiveDate,
         }),
       });
 
@@ -190,7 +192,10 @@ Rules:
       }
 
       // Success! The backend has already saved the schedule.
-      router.push(`/dashboard-preview?date=${encodeURIComponent(effectiveDate)}`);
+      const query = datesParam
+        ? `?dates=${datesParam}`
+        : `?date=${dateParam || new Date().toISOString().split("T")[0]}`;
+      router.push(`/dashboard-preview${query}`);
     } catch (err) {
       console.error("Failed to generate schedule", err);
       alert("Failed to generate schedule. Please try again.");
