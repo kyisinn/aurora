@@ -24,12 +24,16 @@ export async function POST(req: Request) {
   try {
     const { userId } = await ensureUser();
     const body = await req.json();
+    const dueValue =
+      typeof body.due === "string" && body.due.trim().length > 0
+        ? body.due.trim()
+        : new Date().toISOString().split("T")[0];
 
     const newTask = await prisma.task.create({
       data: {
         title: String(body.title || ""),
         minutes: Number(body.minutes || 0),
-        due: String(body.due || ""),
+        due: dueValue,
         priority: String(body.priority || "medium"),
         notes: body.notes ?? null,
         userId,

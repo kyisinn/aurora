@@ -87,19 +87,23 @@ export async function POST(req: Request) {
       .map((d) => d.trim())
       .filter(Boolean);
 
-    const newTasks = parsed.data.tasks
-      .filter((task) => !task.id)
-      .map((task) => ({
-        title: task.title,
-        minutes: task.minutes,
-        due: task.due || dates[0],
-        priority: task.priority || "medium",
-        userId,
-      }));
+    const tasksPromise = Promise.all(
+      parsed.data.tasks.map(async (task) => {
+        if (task.id) return task;
 
-    const dbPromise = newTasks.length > 0
-      ? prisma.task.createMany({ data: newTasks })
-      : Promise.resolve();
+        const createdTask = await prisma.task.create({
+          data: {
+            title: task.title,
+            minutes: task.minutes,
+            due: task.due || dates[0],
+            priority: task.priority || "medium",
+            userId,
+          },
+        });
+
+        return { ...task, id: createdTask.id };
+      })
+    );
 
     const generatePromise = generateObject({
       model: openai("gpt-4.1-mini"),
@@ -146,12 +150,12 @@ export async function POST(req: Request) {
       `,
     });
 
-    const [, aiResult] = await Promise.all([dbPromise, generatePromise]);
+    const [tasksWithIds, aiResult] = await Promise.all([tasksPromise, generatePromise]);
 
     const savePromises = aiResult.object.days.map((dayPlan) => {
       const scheduleWithTaskId = dayPlan.schedule.map((block) => {
         const normalizedBlockTitle = normalizeTitle(block.title);
-        const matchedTask = parsed.data.tasks.find((task) => {
+        const matchedTask = tasksWithIds.find((task) => {
           if (!task.id) return false;
           const normalizedTaskTitle = normalizeTitle(task.title);
           return (

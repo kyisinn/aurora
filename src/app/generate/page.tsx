@@ -61,8 +61,7 @@ export default function GeneratePage() {
     };
 
     const mapSetupTasks = (setup: SetupPayload | null) =>
-      setup?.tasks?.map((t, idx) => ({
-        id: `setup-${idx}`,
+      setup?.tasks?.map((t) => ({
         title: t.title,
         minutes: t.minutes,
         priority: t.priority,
@@ -262,9 +261,9 @@ Rules:
             </div>
             <div className="space-y-2">
               {tasks.length ? (
-                tasks.map((task) => (
+                tasks.map((task, idx) => (
                   <div
-                    key={task.id}
+                    key={task.id || `temp-${idx}`}
                     className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2"
                   >
                     <div className="flex items-center justify-between">

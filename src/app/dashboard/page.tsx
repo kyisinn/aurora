@@ -12,11 +12,15 @@ type Block = {
   start: string;
   end: string;
   tag: BlockTag;
+  taskId?: string | null;
   priority?: BlockPriority | null;
+  completed?: boolean;
 };
 type TaskRow = {
+  id: string;
   title: string;
   priority?: string | null;
+  completed?: boolean;
 };
 
 const LS_AUTH = "aurora:authed";
@@ -119,6 +123,40 @@ function resolveBlockPriority(blockTitle: string, tasks: TaskRow[]) {
   return normalizePriority(partial?.priority);
 }
 
+function resolveBlockTask(block: Block, tasks: TaskRow[]) {
+  if (block.taskId) {
+    const byId = tasks.find((task) => task.id === block.taskId);
+    if (byId) {
+      return {
+        taskId: byId.id,
+        priority: normalizePriority(byId.priority),
+        completed: Boolean(byId.completed),
+      };
+    }
+  }
+
+  const normalized = normalizeTitle(block.title);
+  const direct = tasks.find((task) => normalizeTitle(task.title) === normalized);
+  if (direct) {
+    return {
+      taskId: direct.id,
+      priority: normalizePriority(direct.priority),
+      completed: Boolean(direct.completed),
+    };
+  }
+
+  const partial = tasks.find((task) => {
+    const taskTitle = normalizeTitle(task.title);
+    return normalized.includes(taskTitle) || taskTitle.includes(normalized);
+  });
+
+  return {
+    taskId: partial?.id ?? null,
+    priority: normalizePriority(partial?.priority),
+    completed: Boolean(partial?.completed),
+  };
+}
+
 export default function DashboardPage() {
   const router = useRouter();
   const [blocks, setBlocks] = useState<Block[]>([]);
@@ -126,6 +164,7 @@ export default function DashboardPage() {
   const [editing, setEditing] = useState(false);
   const [detailsOpen, setDetailsOpen] = useState(false);
   const [selectedDate, setSelectedDate] = useState<Date>(new Date());
+  const [refreshCount, setRefreshCount] = useState(0);
   const [calendarTab, setCalendarTab] = useState<"daily" | "monthly">("daily");
   const [multiSelectedDates, setMultiSelectedDates] = useState<Date[]>([]);
   const dayStart = 6 * 60;
@@ -176,10 +215,12 @@ export default function DashboardPage() {
           return;
         }
 
-        const tasks: TaskRow[] = tasksRes.ok ? await tasksRes.json() : [];
+        const tasks: TaskRow[] = tasksRes.ok
+          ? (await tasksRes.json()).map((task: TaskRow) => ({ ...task, id: String(task.id) }))
+          : [];
         const parsed = (data.blocks as Block[]).map((block) => ({
           ...block,
-          priority: resolveBlockPriority(block.title, tasks),
+          ...resolveBlockTask(block, tasks),
         }));
 
         parsed.sort((a, b) => toMin(a.start) - toMin(b.start));
@@ -193,7 +234,7 @@ export default function DashboardPage() {
     return () => {
       active = false;
     };
-  }, [router]);
+  }, [router, refreshCount]);
 
   // Calendar schedule (selected date)
   useEffect(() => {
@@ -215,10 +256,12 @@ export default function DashboardPage() {
           return;
         }
 
-        const tasks: TaskRow[] = tasksRes.ok ? await tasksRes.json() : [];
+        const tasks: TaskRow[] = tasksRes.ok
+          ? (await tasksRes.json()).map((task: TaskRow) => ({ ...task, id: String(task.id) }))
+          : [];
         const parsed = (data.blocks as Block[]).map((block) => ({
           ...block,
-          priority: resolveBlockPriority(block.title, tasks),
+          ...resolveBlockTask(block, tasks),
         }));
 
         parsed.sort((a, b) => toMin(a.start) - toMin(b.start));
@@ -232,7 +275,7 @@ export default function DashboardPage() {
     return () => {
       active = false;
     };
-  }, [selectedDate]);
+  }, [selectedDate, refreshCount]);
 
   const deepCount = useMemo(
     () => blocks.filter((b) => b.tag === "Deep Work").length,
@@ -241,7 +284,7 @@ export default function DashboardPage() {
 
   async function saveSchedule() {
     try {
-      const payloadBlocks = blocks.map(({ priority, ...rest }) => rest);
+      const payloadBlocks = blocks.map(({ priority, completed, ...rest }) => rest);
       const res = await fetch("/api/schedule", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -288,6 +331,34 @@ export default function DashboardPage() {
       [next[idx], next[target]] = [next[target], next[idx]];
       return reassignTimes(next);
     });
+  }
+
+  async function markBlockDone(target: Block, mode: "today" | "selected") {
+    if (!target.taskId || target.completed) return;
+    try {
+      const res = await fetch(`/api/tasks/${target.taskId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ completed: true }),
+      });
+
+      if (!res.ok) throw new Error("Failed to mark task as done");
+
+      const markDone = (list: Block[]) =>
+        list.map((block) =>
+          block.taskId === target.taskId ? { ...block, completed: true } : block
+        );
+
+      if (mode === "today") setBlocks((prev) => markDone(prev));
+      else setSelectedBlocks((prev) => markDone(prev));
+
+      setRefreshCount((prev) => prev + 1);
+      alert("✅ Task marked done! Points awarded.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to mark task as done.";
+      console.error("markBlockDone error:", message);
+      alert(`❌ ${message}`);
+    }
   }
 
   // Calendar helpers
@@ -510,6 +581,19 @@ export default function DashboardPage() {
                   </div>
 
                   <div className="flex items-center gap-2">
+                    {editing && b.taskId ? (
+                      <button
+                        onClick={() => markBlockDone(b, "today")}
+                        disabled={Boolean(b.completed)}
+                        className={`rounded-xl border px-2 py-1 text-xs font-semibold transition ${
+                          b.completed
+                            ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-200"
+                            : "border-white/10 bg-white/5 hover:bg-white/10"
+                        }`}
+                      >
+                        {b.completed ? "Completed" : "Mark Done"}
+                      </button>
+                    ) : null}
                     <span className={tagClass(b.tag)}>{b.tag}</span>
                   </div>
                 </div>

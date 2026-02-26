@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Card } from "@/component/card";
 import { Button } from "@/component/button";
 
@@ -41,6 +41,26 @@ function priorityBadge(p: Priority) {
 
 export default function TasksPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+
+  const selectedDueFromQuery = useMemo(() => {
+    const date = searchParams.get("date");
+    if (date) return date;
+
+    const dates = searchParams.get("dates");
+    if (!dates) return null;
+
+    const first = dates.split(",")[0]?.trim();
+    return first || null;
+  }, [searchParams]);
+
+  const queryStr = useMemo(() => {
+    const dates = searchParams.get("dates");
+    const date = searchParams.get("date");
+    if (dates) return `?dates=${encodeURIComponent(dates)}`;
+    if (date) return `?date=${encodeURIComponent(date)}`;
+    return "";
+  }, [searchParams]);
 
   const [tasks, setTasks] = useState<Task[]>([]);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -48,14 +68,23 @@ export default function TasksPage() {
   // form
   const [title, setTitle] = useState("");
   const [minutes, setMinutes] = useState<number>(60);
-  const [due, setDue] = useState<string>(todayISO());
+  const [due, setDue] = useState<string>(selectedDueFromQuery || todayISO());
   const [priority, setPriority] = useState<Priority>("medium");
   const [notes, setNotes] = useState("");
+
+  useEffect(() => {
+    setDue(selectedDueFromQuery || todayISO());
+  }, [selectedDueFromQuery]);
 
   // 1. Add a loading state to handle the transition
   const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+
+  const tasksForSelectedDate = useMemo(
+    () => tasks.filter((task) => task.due === due),
+    [tasks, due]
+  );
 
   // 2. Updated load effect
   const loadTasks = async () => {
@@ -64,24 +93,14 @@ export default function TasksPage() {
       setLoadError(null);
 
       const profileRes = await fetch("/api/profile");
-      if (profileRes.status === 401) {
-        router.push("/login");
-        return;
-      }
-      if (!profileRes.ok) {
-        throw new Error(`Failed to load profile (${profileRes.status})`);
-      }
-
-      const profile = await profileRes.json();
-      if (!profile) {
-        router.push("/get-started");
-        return;
+      if (!profileRes.ok && profileRes.status !== 401) {
+        console.warn(`Failed to load profile (${profileRes.status})`);
       }
 
       const response = await fetch("/api/tasks");
       if (response.status === 401) {
-        console.log("Unauthorized - redirecting to login");
-        router.push("/login");
+        console.log("Unauthorized - showing local empty state");
+        setTasks([]);
         return;
       }
 
@@ -114,19 +133,19 @@ export default function TasksPage() {
   }, [router]);
 
   const stats = useMemo(() => {
-    const totalMin = tasks.reduce((s, t) => s + (Number(t.minutes) || 0), 0);
-    const high = tasks.filter((t) => t.priority === "high").length;
-    const dueSoon = [...tasks].sort((a, b) => a.due.localeCompare(b.due)).slice(0, 3);
-    const completed = tasks.filter((t) => Boolean(t.completed));
+    const totalMin = tasksForSelectedDate.reduce((s, t) => s + (Number(t.minutes) || 0), 0);
+    const high = tasksForSelectedDate.filter((t) => t.priority === "high").length;
+    const dueSoon = [...tasksForSelectedDate].sort((a, b) => a.due.localeCompare(b.due)).slice(0, 3);
+    const completed = tasksForSelectedDate.filter((t) => Boolean(t.completed));
     const points = completed.reduce((sum, task) => sum + pointsForTask(task), 0);
     return { totalMin, high, dueSoon, completedCount: completed.length, points };
-  }, [tasks]);
+  }, [tasksForSelectedDate]);
 
   function resetForm() {
     setEditingId(null);
     setTitle("");
     setMinutes(60);
-    setDue(todayISO());
+    setDue(selectedDueFromQuery || todayISO());
     setPriority("medium");
     setNotes("");
   }
@@ -147,7 +166,7 @@ export default function TasksPage() {
           body: JSON.stringify({
             title: clean,
             minutes,
-            due,
+            due: due || selectedDueFromQuery || todayISO(),
             priority,
             notes: notes.trim() || null,
           }),
@@ -167,7 +186,7 @@ export default function TasksPage() {
           body: JSON.stringify({
             title: clean,
             minutes,
-            due,
+            due: due || selectedDueFromQuery || todayISO(),
             priority,
             notes: notes.trim() || null,
           }),
@@ -279,7 +298,7 @@ export default function TasksPage() {
         </div>
 
         <div className="flex gap-2">
-          <Button variant="ghost" onClick={() => router.push("/dashboard-preview")}>
+          <Button variant="ghost" onClick={() => router.push(`/dashboard-preview${queryStr}`)}>
             Preview
           </Button>
           <Button variant="ghost" onClick={() => router.push("/achievements")}>
@@ -288,7 +307,7 @@ export default function TasksPage() {
           <Button variant="ghost" onClick={() => router.push("/dashboard")}>
             Dashboard
           </Button>
-          <Button onClick={() => router.push("/generate")}>Generate</Button>
+          <Button onClick={() => router.push(`/generate${queryStr}`)}>Generate</Button>
         </div>
       </div>
 
@@ -421,7 +440,7 @@ export default function TasksPage() {
                 <div className="text-sm font-semibold">Your task list</div>
               </div>
               <Button
-                onClick={() => router.push("/generate")}
+                onClick={() => router.push(`/generate${queryStr}`)}
                 className="bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 shadow-lg shadow-blue-500/25"
               >
                 Use tasks → Generate
@@ -451,8 +470,12 @@ export default function TasksPage() {
                 <div className="rounded-3xl border border-white/10 bg-black/20 p-4 text-sm text-white/60">
                   No tasks yet. Add one to get started.
                 </div>
+              ) : !tasksForSelectedDate.length ? (
+                <div className="rounded-3xl border border-white/10 bg-black/20 p-4 text-sm text-white/60">
+                  No tasks scheduled for {due}. Add one above!
+                </div>
               ) : (
-                tasks
+                tasksForSelectedDate
                   .slice()
                   .sort((a, b) => a.due.localeCompare(b.due))
                   .map((t) => (

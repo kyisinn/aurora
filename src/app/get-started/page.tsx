@@ -669,7 +669,7 @@ export default function GetStartedPage() {
                       const query = selectedDatesStr
                         ? `?dates=${encodeURIComponent(selectedDatesStr)}`
                         : `?date=${encodeURIComponent(selectedDate || todayIso)}`;
-                      router.push(`/generate${query}`);
+                      router.push(`/tasks${query}`);
                     }}
                     className="flex-1 bg-gradient-to-r from-blue-500 to-indigo-600 hover:from-blue-600 hover:to-indigo-700 font-semibold py-3 rounded-xl transition-all shadow-lg shadow-blue-500/25"
                   >
