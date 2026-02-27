@@ -22,7 +22,7 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <ClerkProvider afterSignInUrl="/dashboard" afterSignUpUrl="/onboarding/connect-tools">
+    <ClerkProvider afterSignInUrl="/dashboard" afterSignUpUrl="/dashboard">
       <html lang="en">
         <body className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen bg-[#0b0b12] text-white`}>
           {/* Navbar */}
