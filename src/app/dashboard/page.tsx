@@ -299,6 +299,20 @@ export default function DashboardPage() {
     }
   }
 
+  async function persistScheduleForDate(date: Date, list: Block[]) {
+    const payloadBlocks = list.map(({ priority, completed, ...rest }) => rest);
+    const res = await fetch("/api/schedule", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        date: formatDate(date),
+        blocks: payloadBlocks,
+        userPrompt: null,
+      }),
+    });
+    if (!res.ok) throw new Error("Failed to update schedule");
+  }
+
   /** Reassign start/end times so blocks flow sequentially after reorder */
   const reassignTimes = useCallback(
     (list: Block[]): Block[] => {
@@ -357,6 +371,40 @@ export default function DashboardPage() {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to mark task as done.";
       console.error("markBlockDone error:", message);
+      alert(`❌ ${message}`);
+    }
+  }
+
+  async function deleteTask(target: Block, mode: "today" | "selected") {
+    if (!target.taskId) return;
+    const confirmed = window.confirm("Delete this task?");
+    if (!confirmed) return;
+
+    try {
+      const res = await fetch(`/api/tasks/${target.taskId}`, {
+        method: "DELETE",
+      });
+
+      if (!res.ok) throw new Error("Failed to delete task");
+
+      const removeTask = (list: Block[]) =>
+        list.filter((block) => block.taskId !== target.taskId);
+
+      if (mode === "today") {
+        const nextBlocks = removeTask(blocks);
+        setBlocks(nextBlocks);
+        await persistScheduleForDate(new Date(), nextBlocks);
+      } else {
+        const nextBlocks = removeTask(selectedBlocks);
+        setSelectedBlocks(nextBlocks);
+        await persistScheduleForDate(selectedDate, nextBlocks);
+      }
+
+      setRefreshCount((prev) => prev + 1);
+      alert("🗑️ Task deleted.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to delete task.";
+      console.error("deleteTask error:", message);
       alert(`❌ ${message}`);
     }
   }
@@ -587,17 +635,25 @@ export default function DashboardPage() {
 
                   <div className="flex items-center gap-2">
                     {editing && b.taskId ? (
-                      <button
-                        onClick={() => markBlockDone(b, "today")}
-                        disabled={Boolean(b.completed)}
-                        className={`rounded-xl border px-2 py-1 text-xs font-semibold transition ${
-                          b.completed
-                            ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-200"
-                            : "border-white/10 bg-white/5 hover:bg-white/10"
-                        }`}
-                      >
-                        {b.completed ? "Completed" : "Mark Done"}
-                      </button>
+                      <>
+                        <button
+                          onClick={() => markBlockDone(b, "today")}
+                          disabled={Boolean(b.completed)}
+                          className={`rounded-xl border px-2 py-1 text-xs font-semibold transition ${
+                            b.completed
+                              ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-200"
+                              : "border-white/10 bg-white/5 hover:bg-white/10"
+                          }`}
+                        >
+                          {b.completed ? "Completed" : "Mark Done"}
+                        </button>
+                        <button
+                          onClick={() => deleteTask(b, "today")}
+                          className="rounded-xl border border-red-500/40 bg-red-500/10 px-2 py-1 text-xs font-semibold text-red-200 transition hover:bg-red-500/20"
+                        >
+                          Delete Task
+                        </button>
+                      </>
                     ) : null}
                     <span className={tagClass(b.tag)}>{b.tag}</span>
                   </div>

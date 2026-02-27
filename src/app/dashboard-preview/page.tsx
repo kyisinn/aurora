@@ -233,6 +233,14 @@ function mapTagToType(tag?: string) {
   return "focus";
 }
 
+function mapTypeToTag(type?: string) {
+  if (type === "focus") return "Deep Work";
+  if (type === "break") return "Break";
+  if (type === "class") return "Class";
+  if (type === "personal") return "Admin";
+  return "Deep Work";
+}
+
 function normalizeTasks(data: unknown): TaskInput[] {
   const raw: unknown[] = Array.isArray(data)
     ? data
@@ -441,6 +449,98 @@ export default function DashboardPreviewPage() {
     } catch (err) {
       const message = err instanceof Error ? err.message : "Failed to mark task as finished.";
       console.error("markBlockDone error:", message);
+      alert(`❌ ${message}`);
+    }
+  }
+
+  async function persistSchedule(blocksToSave: ScheduleBlock[]) {
+    const payloadBlocks = blocksToSave.map((entry) => ({
+      title: entry.title,
+      start: entry.start,
+      end: entry.end,
+      tag: entry.tag ?? mapTypeToTag(entry.type),
+      priority: entry.priority,
+      taskId: entry.taskId ?? null,
+      completed: Boolean(entry.completed),
+    }));
+
+    const res = await fetch("/api/schedule", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        date: effectiveDate,
+        blocks: payloadBlocks,
+        userPrompt: null,
+      }),
+    });
+
+    if (!res.ok) throw new Error("Failed to update schedule");
+  }
+
+  async function removeTaskFromPreview(task: TaskInput) {
+    const confirmed = window.confirm(`Remove \"${task.title}\" from live preview?`);
+    if (!confirmed) return;
+
+    try {
+      if (task.id) {
+        const deleteRes = await fetch(`/api/tasks/${task.id}`, { method: "DELETE" });
+        if (!deleteRes.ok) throw new Error("Failed to delete task");
+      }
+
+      const matchesTask = (left: string, right: string) => {
+        const a = normalizeTitle(left);
+        const b = normalizeTitle(right);
+        return a === b || a.includes(b) || b.includes(a);
+      };
+
+      setApiTasks((prev) =>
+        prev.filter((entry) => {
+          if (task.id && entry.id) return entry.id !== task.id;
+          return !matchesTask(entry.title, task.title);
+        })
+      );
+
+      setSetup((prev) => {
+        if (!prev) return prev;
+        const nextTasks = prev.tasks.filter((entry) => !matchesTask(entry.title, task.title));
+        const nextPreview = (prev.preview ?? []).filter((entry) => !matchesTask(entry.title, task.title));
+        const nextSetup = { ...prev, tasks: nextTasks, preview: nextPreview };
+        try {
+          localStorage.setItem("aurora_setup", JSON.stringify(nextSetup));
+        } catch {
+          // ignore local storage write errors
+        }
+        return nextSetup;
+      });
+
+      const currentBlocks: ScheduleBlock[] = schedule?.blocks?.length
+        ? schedule.blocks
+        : blocks.map((entry) => ({
+            title: entry.title,
+            start: entry.start,
+            end: entry.end,
+            type: entry.type,
+            priority: entry.priority,
+            taskId: entry.taskId ?? null,
+            completed: Boolean(entry.completed),
+          }));
+
+      const nextBlocks = currentBlocks.filter((entry) => {
+        if (task.id && entry.taskId) return entry.taskId !== task.id;
+        return !matchesTask(entry.title, task.title);
+      });
+
+      setSchedule((prev) => ({
+        ...(prev ?? {}),
+        blocks: nextBlocks,
+      }));
+
+      await persistSchedule(nextBlocks);
+      setRefreshCount((prev) => prev + 1);
+      alert("🗑️ Task removed from live preview.");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "Failed to remove task.";
+      console.error("removeTaskFromPreview error:", message);
       alert(`❌ ${message}`);
     }
   }
@@ -685,6 +785,14 @@ export default function DashboardPreviewPage() {
                           done
                         </span>
                       ) : null}
+                    </div>
+                    <div className="mt-3 flex justify-end">
+                      <button
+                        onClick={() => removeTaskFromPreview(t)}
+                        className="rounded-lg border border-red-500/40 bg-red-500/10 px-2.5 py-1 text-[11px] font-semibold text-red-200 transition hover:bg-red-500/20"
+                      >
+                        Remove from live view
+                      </button>
                     </div>
                   </div>
                 ))
