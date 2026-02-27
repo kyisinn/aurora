@@ -554,7 +554,7 @@ export default function DashboardPreviewPage() {
           <div className="flex gap-3">
             <button
               className="rounded-xl border border-white/15 bg-white/5 hover:bg-white/10 px-5 py-3 font-semibold transition"
-              onClick={() => router.push("/tasks")}
+              onClick={() => router.push("/get-started")}
             >
               Add more tasks
             </button>

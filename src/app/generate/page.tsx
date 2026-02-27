@@ -31,6 +31,17 @@ type ProfileResponse = {
   preferences?: { timePreference?: TimePreference } | null;
 };
 
+function getPriorityStyles(priority: Priority) {
+  const base = "rounded-2xl border p-3 transition-all duration-300 ";
+  if (priority === "high") {
+    return base + "border-orange-500/30 bg-orange-500/10 border-l-4 border-l-orange-400/80";
+  }
+  if (priority === "medium") {
+    return base + "border-yellow-500/30 bg-yellow-500/10 border-l-4 border-l-yellow-400/80";
+  }
+  return base + "border-emerald-500/30 bg-emerald-500/10 border-l-4 border-l-emerald-400/80";
+}
+
 
 
 /* ================= PAGE ================= */
@@ -213,13 +224,16 @@ Rules:
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-xl font-semibold">Generate schedule</div>
-          <div className="text-base text-white/50">
+          <div className="bg-gradient-to-r from-white to-white/60 bg-clip-text text-2xl font-bold text-transparent">
+            Generate Schedule
+          </div>
+          <div className="text-sm text-white/50">
             Aurora uses AI to build a realistic plan for you
           </div>
         </div>
         <Button
           variant="ghost"
+          className="hover:bg-white/10"
           onClick={() => {
             const query = datesParam
               ? `?dates=${encodeURIComponent(datesParam)}`
@@ -231,70 +245,86 @@ Rules:
         </Button>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid gap-6 lg:grid-cols-3">
         {/* User prompt */}
-        <Card>
-          <div className="space-y-3">
-            <div className="text-lg font-semibold">Your instruction</div>
+        <Card className="!border-violet-500/40 !bg-gradient-to-br !from-violet-500/10 !via-black/40 !to-indigo-500/5">
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <div className="h-6 w-2 rounded-full bg-violet-500" />
+              <div className="text-lg font-bold">Your instructions</div>
+            </div>
             <textarea
               value={userPrompt}
               onChange={(e) => setUserPrompt(e.target.value)}
               rows={8}
-              placeholder="e.g. I have an exam tomorrow, focus more in the morning. Also, I need a long lunch break."
-              className="w-full rounded-3xl border border-white/10 bg-black/20 px-4 py-3 text-lg outline-none focus:border-violet-500"
+              placeholder="e.g. I have an exam tomorrow, focus more in the morning..."
+              className="w-full rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-base outline-none transition-colors placeholder:text-white/20 focus:border-violet-500/50"
             />
-            <Button onClick={handleGenerate} disabled={loading || (!userPrompt.trim() && tasks.length === 0)}>
-              {loading ? "Generating with AI…" : "Generate schedule →"}
+            <Button
+              onClick={handleGenerate}
+              disabled={loading || (!userPrompt.trim() && tasks.length === 0)}
+              className="w-full bg-gradient-to-r from-violet-600 to-indigo-600 py-6 text-lg font-bold shadow-lg shadow-violet-500/20 hover:from-violet-500 hover:to-indigo-500"
+            >
+              {loading ? "AI is thinking..." : "Generate schedule →"}
             </Button>
           </div>
         </Card>
 
         {/* AI prompt preview */}
-        <Card>
-          <div className="space-y-3">
-            <div className="text-lg font-semibold">Context preview</div>
+        <Card className="!border-white/10 !bg-black/40">
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <div className="h-6 w-2 rounded-full bg-slate-500" />
+              <div className="text-lg font-bold">Context Preview</div>
+            </div>
             <textarea
               value={autoPrompt}
               readOnly
-              rows={12}
-              className="w-full rounded-3xl border border-white/10 bg-black/20 px-4 py-3 text-base text-white/80"
+              rows={10}
+              className="w-full rounded-2xl border border-white/5 bg-white/5 px-4 py-3 font-mono text-sm text-white/60 scrollbar-thin"
             />
-            <div className="text-base text-white/40">
-              Tasks loaded: <strong>{tasks.length}</strong>
+            <div className="rounded-xl border border-white/10 bg-white/5 p-3">
+              <div className="text-xs font-bold uppercase tracking-widest text-white/40">Tasks Loaded</div>
+              <div className="text-xl font-black">{tasks.length}</div>
             </div>
           </div>
         </Card>
 
         {/* Visual task list preview */}
-        <Card>
-          <div className="space-y-3">
+        <Card className="!border-emerald-500/30 !bg-gradient-to-br !from-emerald-500/5 !via-black/40 !to-teal-500/5">
+          <div className="space-y-4">
             <div className="flex items-center justify-between">
-              <div className="text-lg font-semibold">Task list</div>
-              <div className="text-base text-white/40">{tasks.length} items</div>
+              <div className="flex items-center gap-2">
+                <div className="h-6 w-2 rounded-full bg-emerald-500" />
+                <div className="text-lg font-bold">Task List</div>
+              </div>
+              <div className="rounded-md bg-emerald-400/10 px-2 py-1 text-xs font-bold text-emerald-400">
+                {tasks.length} ITEMS
+              </div>
             </div>
-            <div className="space-y-2">
+            <div className="max-h-[440px] space-y-3 overflow-y-auto pr-2 scrollbar-thin scrollbar-thumb-white/10 scrollbar-track-transparent">
               {tasks.length ? (
                 tasks.map((task, idx) => (
                   <div
                     key={task.id || `temp-${idx}`}
-                    className="rounded-2xl border border-white/10 bg-white/5 px-3 py-2"
+                    className={getPriorityStyles(task.priority)}
                   >
                     <div className="flex items-center justify-between">
-                      <div className="text-base font-semibold">{task.title}</div>
-                      <div className="text-sm uppercase tracking-wide text-white/60">
+                      <div className="truncate pr-2 text-sm font-bold">{task.title}</div>
+                      <div className="text-[10px] font-black uppercase tracking-widest opacity-60">
                         {task.priority}
                       </div>
                     </div>
-                    <div className="mt-1 flex items-center gap-2 text-base text-white/50">
-                      <span>{task.minutes} min</span>
+                    <div className="mt-2 flex items-center gap-2 text-[11px] text-white/50">
+                      <span className="rounded bg-white/10 px-1.5 py-0.5 text-white/80">{task.minutes}m</span>
                       <span>•</span>
-                      <span>{task.due ? `Due ${task.due}` : "No due date"}</span>
+                      <span className="truncate">{task.due ? `Due ${task.due}` : "No due date"}</span>
                     </div>
                   </div>
                 ))
               ) : (
-                <div className="rounded-2xl border border-dashed border-white/10 bg-black/10 px-3 py-6 text-center text-base text-white/50">
-                  No tasks yet. Add tasks to preview them here.
+                <div className="rounded-3xl border border-dashed border-white/10 bg-black/20 px-4 py-10 text-center text-sm text-white/30">
+                  No tasks selected for this date.
                 </div>
               )}
             </div>
