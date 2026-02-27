@@ -99,13 +99,26 @@ export default function GeneratePage() {
           const data: Task[] = await tasksRes.json();
           if (active) {
             if (Array.isArray(data) && data.length > 0) {
-              const filtered = data.filter((task) => task.due === effectiveDate);
+              const filtered = data.filter((task) => {
+                if (datesParam) {
+                  const targetDates = datesParam.split(",");
+                  return targetDates.includes(task.due || "");
+                }
+                return task.due === effectiveDate;
+              });
 
-              if (filtered.length > 0) setTasks(filtered);
-              else if (setupTasks.length > 0) setTasks(setupTasks);
-              else setTasks([]);
-            } else if (setupTasks.length > 0) setTasks(setupTasks);
-            else setTasks([]);
+              if (filtered.length > 0) {
+                setTasks(filtered);
+              } else if (setupTasks.length > 0) {
+                setTasks(setupTasks);
+              } else {
+                setTasks([]);
+              }
+            } else if (setupTasks.length > 0) {
+              setTasks(setupTasks);
+            } else {
+              setTasks([]);
+            }
           }
         } else if (active) {
           if (setupTasks.length > 0) setTasks(setupTasks);
@@ -152,13 +165,17 @@ export default function GeneratePage() {
       window.removeEventListener("focus", handleFocus);
       document.removeEventListener("visibilitychange", handleVisibility);
     };
-  }, [effectiveDate]);
+  }, [effectiveDate, datesParam]);
 
   /* AI-style summary prompt (preview only) */
   const autoPrompt = useMemo(() => {
     const lines = tasks.map(
-      (t) => `• ${t.title} (${t.minutes} min, ${t.priority}${t.due ? `, due ${t.due}` : ""})`
+      (t) => `• [${t.due || "No Date"}] ${t.title} (${t.minutes} min, ${t.priority})`
     );
+
+    const dateDisplay = datesParam
+      ? `Batch Plan (${datesParam.split(",").length} days): ${datesParam.split(",").join(", ")}`
+      : `Date: ${effectiveDate}`;
 
     const preferenceLine = timePreference
       ? `Preferred focus window: ${timePreference}`
@@ -167,7 +184,7 @@ export default function GeneratePage() {
     return `User request:
 ${userPrompt || "(none)"}
 
-  Date: ${effectiveDate}
+${dateDisplay}
 
 ${preferenceLine}
 
@@ -175,10 +192,11 @@ Tasks:
 ${lines.length ? lines.join("\n") : "No tasks added"}
 
 Rules:
+- Distribute tasks logically across the provided Target Dates
 - Prioritize urgent tasks
 - Insert breaks
 - Keep schedule realistic`;
-  }, [tasks, userPrompt, timePreference]);
+  }, [tasks, userPrompt, timePreference, effectiveDate, datesParam]);
 
   async function handleGenerate() {
     if (!userPrompt.trim() && tasks.length === 0) {
@@ -316,9 +334,11 @@ Rules:
                       </div>
                     </div>
                     <div className="mt-2 flex items-center gap-2 text-[11px] text-white/50">
-                      <span className="rounded bg-white/10 px-1.5 py-0.5 text-white/80">{task.minutes}m</span>
+                      <span className="bg-white/10 px-1.5 py-0.5 rounded text-white/80">{task.minutes}m</span>
                       <span>•</span>
-                      <span className="truncate">{task.due ? `Due ${task.due}` : "No due date"}</span>
+                      <span className="truncate font-bold text-emerald-400">
+                        {task.due ? task.due : "No due date"}
+                      </span>
                     </div>
                   </div>
                 ))
