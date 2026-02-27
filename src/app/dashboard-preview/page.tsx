@@ -412,13 +412,46 @@ export default function DashboardPreviewPage() {
       : generateDayPreview(setup.preference, setup.intensity, setup.focusHours, setup.tasks);
   }, [generatedBlocks, setup]);
 
+  function resolveTaskIdByTitle(title?: string) {
+    if (!title) return null;
+    const normalized = normalizeTitle(title);
+
+    const fromBlocks = generatedBlocks.find((entry) => {
+      if (!entry.taskId) return false;
+      const blockTitle = normalizeTitle(entry.title);
+      return (
+        blockTitle === normalized ||
+        blockTitle.includes(normalized) ||
+        normalized.includes(blockTitle)
+      );
+    });
+    if (fromBlocks?.taskId) return fromBlocks.taskId;
+
+    const fromTasks = apiTasks.find((task) => {
+      const taskTitle = normalizeTitle(task.title);
+      return (
+        taskTitle === normalized ||
+        taskTitle.includes(normalized) ||
+        normalized.includes(taskTitle)
+      );
+    });
+
+    return fromTasks?.id ?? null;
+  }
+
   async function markBlockDone(block: {
     taskId?: string | null;
     completed?: boolean;
+    title?: string;
   }) {
-    if (!block.taskId || block.completed) return;
+    if (block.completed) return;
+    const resolvedTaskId = block.taskId ?? resolveTaskIdByTitle(block.title);
+    if (!resolvedTaskId) {
+      alert("Unable to find this task to mark as done.");
+      return;
+    }
     try {
-      const res = await fetch(`/api/tasks/${block.taskId}`, {
+      const res = await fetch(`/api/tasks/${resolvedTaskId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ completed: true }),
@@ -427,7 +460,7 @@ export default function DashboardPreviewPage() {
 
       setApiTasks((prev) =>
         prev.map((task) =>
-          task.id === block.taskId ? { ...task, completed: true } : task
+          task.id === resolvedTaskId ? { ...task, completed: true } : task
         )
       );
 
@@ -436,7 +469,7 @@ export default function DashboardPreviewPage() {
         return {
           ...prev,
           blocks: prev.blocks.map((entry) =>
-            entry.taskId === block.taskId
+            entry.taskId === resolvedTaskId
               ? { ...entry, completed: true }
               : entry
           ),
@@ -787,6 +820,23 @@ export default function DashboardPreviewPage() {
                       ) : null}
                     </div>
                     <div className="mt-3 flex justify-end">
+                      <button
+                        onClick={() =>
+                          markBlockDone({
+                            taskId: t.id ?? null,
+                            title: t.title,
+                            completed: Boolean(t.completed),
+                          })
+                        }
+                        disabled={Boolean(t.completed)}
+                        className={`mr-2 rounded-lg border px-2.5 py-1 text-[11px] font-semibold transition ${
+                          t.completed
+                            ? "border-emerald-500/40 bg-emerald-500/20 text-emerald-200"
+                            : "border-white/10 bg-white/5 text-white/80 hover:bg-white/10"
+                        }`}
+                      >
+                        {t.completed ? "Done" : "Mark done"}
+                      </button>
                       <button
                         onClick={() => removeTaskFromPreview(t)}
                         className="rounded-lg border border-red-500/40 bg-red-500/10 px-2.5 py-1 text-[11px] font-semibold text-red-200 transition hover:bg-red-500/20"
