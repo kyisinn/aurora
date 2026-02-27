@@ -42,6 +42,12 @@ function normalizeTitle(value: string) {
     .trim();
 }
 
+function getDuration(start: string, end: string): number {
+  const [h1, m1] = start.split(":").map(Number);
+  const [h2, m2] = end.split(":").map(Number);
+  return h2 * 60 + m2 - (h1 * 60 + m1);
+}
+
 const GenerateRequestSchema = z.object({
   tasks: z.array(
     z.object({
@@ -152,24 +158,45 @@ export async function POST(req: Request) {
 
     const [tasksWithIds, aiResult] = await Promise.all([tasksPromise, generatePromise]);
 
-    const savePromises = aiResult.object.days.map((dayPlan) => {
-      const scheduleWithTaskId = dayPlan.schedule.map((block) => {
-        const normalizedBlockTitle = normalizeTitle(block.title);
-        const matchedTask = tasksWithIds.find((task) => {
-          if (!task.id) return false;
-          const normalizedTaskTitle = normalizeTitle(task.title);
-          return (
-            normalizedBlockTitle === normalizedTaskTitle ||
-            normalizedBlockTitle.includes(normalizedTaskTitle) ||
-            normalizedTaskTitle.includes(normalizedBlockTitle)
-          );
-        });
+    const savePromises = aiResult.object.days.map(async (dayPlan) => {
+      const scheduleWithTaskId = await Promise.all(
+        dayPlan.schedule.map(async (block) => {
+          const normalizedBlockTitle = normalizeTitle(block.title);
+          const matchedTask = tasksWithIds.find((task) => {
+            if (!task.id) return false;
+            const normalizedTaskTitle = normalizeTitle(task.title);
+            return (
+              normalizedBlockTitle === normalizedTaskTitle ||
+              normalizedBlockTitle.includes(normalizedTaskTitle) ||
+              normalizedTaskTitle.includes(normalizedBlockTitle)
+            );
+          });
 
-        return {
-          ...block,
-          taskId: matchedTask?.id ?? null,
-        };
-      });
+          let taskId = matchedTask?.id ?? null;
+
+          if (!taskId && (block.tag === "Deep Work" || block.tag === "Class")) {
+            try {
+              const newAiTask = await prisma.task.create({
+                data: {
+                  userId,
+                  title: block.title,
+                  minutes: getDuration(block.start, block.end),
+                  due: dayPlan.date,
+                  priority: "medium",
+                },
+              });
+              taskId = newAiTask.id;
+            } catch (error) {
+              console.error("Failed to promote AI block to task table:", error);
+            }
+          }
+
+          return {
+            ...block,
+            taskId,
+          };
+        })
+      );
 
       return prisma.schedule.upsert({
         where: {
