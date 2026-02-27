@@ -87,8 +87,13 @@ export default function GeneratePage() {
         if (tasksRes.ok) {
           const data: Task[] = await tasksRes.json();
           if (active) {
-            if (Array.isArray(data) && data.length > 0) setTasks(data);
-            else if (setupTasks.length > 0) setTasks(setupTasks);
+            if (Array.isArray(data) && data.length > 0) {
+              const filtered = data.filter((task) => task.due === effectiveDate);
+
+              if (filtered.length > 0) setTasks(filtered);
+              else if (setupTasks.length > 0) setTasks(setupTasks);
+              else setTasks([]);
+            } else if (setupTasks.length > 0) setTasks(setupTasks);
             else setTasks([]);
           }
         } else if (active) {
@@ -213,8 +218,16 @@ Rules:
             Aurora uses AI to build a realistic plan for you
           </div>
         </div>
-        <Button variant="ghost" onClick={() => router.push("/tasks")}>
-          ← Tasks
+        <Button
+          variant="ghost"
+          onClick={() => {
+            const query = datesParam
+              ? `?dates=${encodeURIComponent(datesParam)}`
+              : `?date=${encodeURIComponent(dateParam ?? effectiveDate)}`;
+            router.push(`/get-started${query}`);
+          }}
+        >
+          ← Get Started
         </Button>
       </div>
 

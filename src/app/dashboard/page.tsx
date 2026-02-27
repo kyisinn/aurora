@@ -408,6 +408,12 @@ export default function DashboardPage() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-10 space-y-6">
+      <div>
+        <h1 className="bg-gradient-to-r from-cyan-300 via-violet-300 to-emerald-300 bg-clip-text text-5xl font-extrabold tracking-tight text-transparent">
+          What&apos;s the plan, chief?
+        </h1>
+      </div>
+
       {/* KPI row */}
       <div className="grid gap-4 md:grid-cols-3">
         <Card className="!border-yellow-400/60 !bg-yellow-500/15">
@@ -451,9 +457,8 @@ export default function DashboardPage() {
           </div>
           <div className="flex gap-2">
             <Button
-              variant="ghost"
+              className="w-auto bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white shadow-lg shadow-emerald-500/25"
               onClick={() => router.push("/achievements")}
-              className="w-auto"
             >
               Achievements
             </Button>
